@@ -6,3 +6,6 @@ pub mod config;
 pub mod debate;
 pub mod model;
 pub mod provider;
+pub mod record;
+pub mod report;
+pub mod run;
