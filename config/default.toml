@@ -3,24 +3,35 @@
 
 rounds = 2  # the round limit, 1–3
 
-# The model each agent runs on. The advocate and the adversary run on the same model by
-# default; edit either table to run them on different models, or different providers.
-# A [models.<agent>.request] table is merged into that agent's request body,
-# e.g. thinking = { type = "disabled" }.
+# The model each agent runs on, and how deeply it reasons. The advocate and the adversary
+# run on the same model and depth by default; edit either agent's tables to make them differ.
+# [models.<agent>.request] is merged into that agent's request body, so it holds the
+# provider's own parameters. For DeepSeek, depth is reasoning_effort = "low", "high" or "max",
+# and thinking = { type = "disabled" } turns reasoning off. Raise max_tokens with the depth,
+# since reasoning counts against it.
 [models.advocate]
 provider = "deepseek"
 model = "deepseek-flash"
 max_tokens = 32768
+
+[models.advocate.request]
+reasoning_effort = "high"
 
 [models.adversary]
 provider = "deepseek"
 model = "deepseek-flash"
 max_tokens = 32768
 
+[models.adversary.request]
+reasoning_effort = "high"
+
 [models.judge]  # used only by `eval`
 provider = "deepseek"
 model = "deepseek-flash"
 max_tokens = 32768
+
+[models.judge.request]
+reasoning_effort = "high"
 
 [providers.deepseek]
 base_url = "https://api.deepseek.com"

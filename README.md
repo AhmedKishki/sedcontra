@@ -85,11 +85,15 @@ provider = "deepseek"
 model = "deepseek-flash"
 max_tokens = 32768
 
-[models.adversary]                # set only what differs, e.g. a stronger critic:
-model = "deepseek-v4-pro"         # provider and max_tokens stay as in the defaults
+[models.advocate.request]         # merged into this agent's request body
+reasoning_effort = "high"         # the depth: "low", "high" or "max" for DeepSeek
 
-[models.adversary.request]        # optional: merged into this agent's request body
-thinking = { type = "disabled" }
+[models.adversary]                # set only what differs, e.g. a deeper critic:
+model = "deepseek-v4-pro"         # provider and max_tokens stay as in the defaults
+max_tokens = 65536                # reasoning counts against max_tokens
+
+[models.adversary.request]
+reasoning_effort = "max"
 
 [providers.deepseek]              # any provider with an OpenAI-format chat API
 base_url = "https://api.deepseek.com"
@@ -101,7 +105,7 @@ stub_max_len = 2                  # stubs up to this many claims are suggested f
 uncovered_min_words = 4           # shorter uncovered stretches are ignored
 ```
 
-Each agent has its own `[models.<agent>]` table (`advocate`, `adversary`, and `judge` for `eval`), and all three default to `deepseek-flash`. To run an agent on another provider, add the provider under `[providers]`, store its key with `cross-examine key set <name>`, and name it in that agent's table.
+Each agent has its own `[models.<agent>]` table (`advocate`, `adversary`, and `judge` for `eval`), and all three default to `deepseek-flash` at the provider's default depth, `high`. The depth goes in the agent's `request` table because each provider names it differently; for DeepSeek, `thinking = { type = "disabled" }` turns reasoning off. To run an agent on another provider, add the provider under `[providers]`, store its key with `cross-examine key set <name>`, and name it in that agent's table.
 
 The prompts live in [agents/](agents/): `advocate.md`, `adversary.md`, `critique-standard.md` and `judge.md`. A prompt names no provider and no model, because the configuration assigns each agent its model. A file with the same name in `.cross-examine/agents/` or `~/.config/cross-examine/agents/` overrides the bundled one, so a prompt or the critique standard can change without a rebuild.
 
