@@ -156,20 +156,20 @@ Every other part sits behind one interface, so it can be replaced, and new parts
 | Part | First implementation |
 | --- | --- |
 | Model provider | a client for OpenAI-format chat APIs, configured for DeepSeek |
-| Agent definitions | one Markdown file each for the advocate and the adversary: a header with the model settings, a body with the prompt |
+| Agent prompts | one Markdown file each for the advocate and the adversary, holding only the prompt |
 | Critique standard | explanatory-critique, in its own file that both prompts include |
 | Analyzers | restatement, uncovered text, stub |
 | Front ends | MCP server, command line |
 | Report renderers | markdown, JSON, Argdown |
 
-Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The advocate and the adversary each name their own model, and both default to the same one. A configuration file holds the provider settings, the round limit, the stub threshold, the uncovered-text minimum and the runs directory.
+Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns the models, with `[models.default]` for every agent and `[models.<agent>]` overriding single fields for one agent, so the advocate and the adversary can run on different models or providers. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the stub threshold, the uncovered-text minimum and the runs directory.
 
 ### Model access
 
 - The first provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from a key file that `cross-examine key set <provider>` writes with mode 600, `~/.config/cross-examine/keys/<provider>` by default, and the tool refuses a key file other users can read. The environment variable named in the configuration, `DEEPSEEK_API_KEY` by default, is a fallback for CI, read only when no key file exists.
 - The key must never reach a model. It travels only in the HTTP `Authorization` header and never enters a prompt, and every provider error is redacted and shortened before it can reach a report, an MCP result, stderr or the run record.
 - The advocate and the adversary return structured data for the orchestrator to check, so every turn requests DeepSeek's JSON output mode, `response_format: {"type": "json_object"}`. The mode requires the prompt to mention JSON and show an example of the structure. It can also return blank content when the model's output was not valid JSON, so the provider retries a blank or unparsable reply twice before the turn fails.
-- Both DeepSeek models run in thinking mode by default. Whether the advocate or the adversary thinks is a model setting in its agent definition.
+- Both DeepSeek models run in thinking mode by default. Whether the advocate or the adversary thinks is a request field in its `[models]` table of the configuration.
 
 ## Prior art
 

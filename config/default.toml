@@ -1,0 +1,20 @@
+# Built-in defaults. ./cross-examine.toml, or config.toml in the user config directory,
+# overrides any value here, table by table.
+
+rounds = 2  # the round limit, 1–3
+
+# The model every agent runs on. [models.<agent>] (advocate, adversary, judge)
+# overrides single fields for that agent; the agents' prompts name no provider.
+[models.default]
+provider = "deepseek"
+model = "deepseek-flash"
+max_tokens = 32768
+# [models.default.request] is merged into the request body, e.g. thinking = { type = "disabled" }
+
+[providers.deepseek]
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"  # CI fallback, read only when no key file exists
+
+[analyzers]
+stub_max_len = 2
+uncovered_min_words = 4

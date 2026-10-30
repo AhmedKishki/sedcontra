@@ -77,10 +77,10 @@ impl AgentHandle {
 
 async fn ask(def: &AgentDef, provider: &dyn ModelProvider, history: &[ChatMessage]) -> Result<TurnReply, AgentError> {
     let request = ChatRequest {
-        model: def.model.clone(),
+        model: def.model.model.clone(),
         messages: history.to_vec(),
-        max_tokens: def.max_tokens,
-        extra: def.request.clone(),
+        max_tokens: def.model.max_tokens,
+        extra: def.model.request.clone(),
     };
     for _ in 0..JSON_ATTEMPTS {
         let completion = provider

@@ -27,8 +27,8 @@ pub struct Environment {
 impl Environment {
     pub fn load(config_path: Option<&Path>) -> anyhow::Result<Self> {
         let config = Config::load(config_path)?;
-        let advocate = load_agent("advocate")?;
-        let adversary = load_agent("adversary")?;
+        let advocate = load_agent("advocate", &config)?;
+        let adversary = load_agent("adversary", &config)?;
         let mut env = Environment { config, advocate, adversary, providers: BTreeMap::new() };
         for def in [env.advocate.clone(), env.adversary.clone()] {
             env.provider_for(&def)?;
@@ -36,16 +36,17 @@ impl Environment {
         Ok(env)
     }
 
-    /// The provider an agent names, built from the configuration on first use.
+    /// The provider the configuration assigns to an agent, built on first use.
     pub fn provider_for(&mut self, def: &AgentDef) -> anyhow::Result<Arc<dyn ModelProvider>> {
-        if let Some(provider) = self.providers.get(&def.provider) {
+        let name = &def.model.provider;
+        if let Some(provider) = self.providers.get(name) {
             return Ok(provider.clone());
         }
-        let cfg = self.config.providers.get(&def.provider).ok_or_else(|| {
-            anyhow!("agent {} names provider {}, which the configuration does not define", def.name, def.provider)
+        let cfg = self.config.providers.get(name).ok_or_else(|| {
+            anyhow!("the model of agent {} uses provider {name}, which [providers] does not define", def.name)
         })?;
-        let provider: Arc<dyn ModelProvider> = Arc::new(OpenAiCompatible::from_config(&def.provider, cfg)?);
-        self.providers.insert(def.provider.clone(), provider.clone());
+        let provider: Arc<dyn ModelProvider> = Arc::new(OpenAiCompatible::from_config(name, cfg)?);
+        self.providers.insert(name.clone(), provider.clone());
         Ok(provider)
     }
 }
@@ -93,7 +94,7 @@ pub async fn cross_examine(
     )
     .map_err(|e| failed(format!("cannot create the run record: {e:#}"), None))?;
 
-    let provider = |def: &AgentDef| env.providers.get(&def.provider).cloned();
+    let provider = |def: &AgentDef| env.providers.get(&def.model.provider).cloned();
     let (Some(advocate_provider), Some(adversary_provider)) = (provider(&env.advocate), provider(&env.adversary))
     else {
         return Err(failed("no provider was built for the agents".into(), Some(record.dir.clone())));

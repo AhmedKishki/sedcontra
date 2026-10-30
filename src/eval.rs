@@ -89,7 +89,7 @@ pub async fn run_eval(
         records.truncate(limit);
     }
 
-    let judge = load_agent("judge")?;
+    let judge = load_agent("judge", &env.config)?;
     let judge_provider = env.provider_for(&judge)?;
     let env = Arc::new(env);
 

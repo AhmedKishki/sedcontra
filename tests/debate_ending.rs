@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use cross_examine::actor::spawn_agent;
 use cross_examine::agents::AgentDef;
+use cross_examine::config::ModelSettings;
 use cross_examine::debate::{DebateInput, run_debate};
 use cross_examine::model::{CritiqueStatus, DebateOutcome, Ending};
 use cross_examine::provider::{ModelProvider, ScriptedProvider};
@@ -27,12 +28,9 @@ const TREE_WITH_C9: &str = r#"{"claims": [
 fn def(name: &str) -> AgentDef {
     AgentDef {
         name: name.into(),
-        provider: "scripted".into(),
-        model: name.into(),
-        max_tokens: 1000,
-        request: Default::default(),
         prompt: "test".into(),
         source: "test".into(),
+        model: ModelSettings { provider: "scripted".into(), model: name.into(), max_tokens: 1000, request: Default::default() },
     }
 }
 

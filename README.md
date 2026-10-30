@@ -36,20 +36,23 @@ The advocate and the adversary are separate actors: each keeps its own context, 
 Building needs Rust 1.95 or later, and running needs an API key for DeepSeek or another provider with an OpenAI-format API.
 
 ```sh
-cargo build --release
+# Install into ~/.cargo/bin, which rustup puts on your PATH
+cargo install --path .
 
 # Store the key once, in your own terminal; the input is hidden
-target/release/cross-examine key set deepseek
+cross-examine key set deepseek
 
 # Command line: the report goes to stdout (md, json or argdown)
-target/release/cross-examine run proposal.md --context context.md --format md
+cross-examine run proposal.md --context context.md --format md
 
 # MCP server over stdio, here registered with Claude Code
-claude mcp add cross-examine -- "$PWD/target/release/cross-examine" serve
+claude mcp add cross-examine -- "$(command -v cross-examine)" serve
 
 # Evaluation against a local copy of the Arguinas test split
-target/release/cross-examine eval 260331-Arguinas-Test-v2.json --limit 20
+cross-examine eval 260331-Arguinas-Test-v2.json --limit 20
 ```
+
+After pulling changes, run `cargo install --path .` again to update the installed binary.
 
 `run` exits with 0 whenever it produces a report, so a harness can start it in the background and read the report when the process exits. Over MCP the call waits until the report is ready, and it sends a progress notification after every turn.
 
@@ -71,23 +74,36 @@ The rule covers Claude Code's file tools and the file commands it recognises in 
 
 ## Configuration
 
-Settings are read from `cross-examine.toml` in the working directory, or else from the user config directory (`~/.config/cross-examine/config.toml` on Linux):
+The built-in defaults are in [config/default.toml](config/default.toml). A `cross-examine.toml` in the working directory, or else `config.toml` in the user config directory (`~/.config/cross-examine/` on Linux), overrides any value in them, table by table:
 
 ```toml
-rounds = 2                # the round limit, 1–3
-runs_dir = "runs"         # default: ~/.local/share/cross-examine/runs on Linux
+rounds = 2                        # the round limit, 1–3
+runs_dir = "runs"                 # default: ~/.local/share/cross-examine/runs on Linux
 
-[providers.deepseek]
+[models.default]                  # the model every agent runs on
+provider = "deepseek"
+model = "deepseek-flash"
+max_tokens = 32768
+
+[models.adversary]                # optional: overrides single fields for one agent
+model = "deepseek-v4-pro"
+
+[models.default.request]          # optional: merged into every request body
+thinking = { type = "disabled" }
+
+[providers.deepseek]              # any provider with an OpenAI-format chat API
 base_url = "https://api.deepseek.com"
 api_key_env = "DEEPSEEK_API_KEY"  # CI fallback, read only when no key file exists
 # api_key_file = "/path/to/key"   # default: ~/.config/cross-examine/keys/deepseek
 
 [analyzers]
-stub_max_len = 2          # stubs up to this many claims are suggested for pruning
-uncovered_min_words = 4   # shorter uncovered stretches are ignored
+stub_max_len = 2                  # stubs up to this many claims are suggested for pruning
+uncovered_min_words = 4           # shorter uncovered stretches are ignored
 ```
 
-The prompts live in [agents/](agents/): `advocate.md`, `adversary.md`, `critique-standard.md` and `judge.md`. Each opens with TOML front matter that sets the provider, the model and `max_tokens`. A file with the same name in `.cross-examine/agents/` or `~/.config/cross-examine/agents/` overrides the bundled one, so a model or the critique standard can change without a rebuild.
+To run on another provider, add it under `[providers]`, store its key with `cross-examine key set <name>`, and name it in `[models.default]` or in a single agent's table.
+
+The prompts live in [agents/](agents/): `advocate.md`, `adversary.md`, `critique-standard.md` and `judge.md`. A prompt names no provider and no model, because the configuration assigns each agent its model. A file with the same name in `.cross-examine/agents/` or `~/.config/cross-examine/agents/` overrides the bundled one, so a prompt or the critique standard can change without a rebuild.
 
 ## Evaluation
 

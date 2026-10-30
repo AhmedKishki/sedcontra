@@ -38,10 +38,10 @@ impl RunRecord {
             let header = format!(
                 "source: {}\nprovider: {}\nmodel: {}\nmax_tokens: {}\nrequest: {}\n\n",
                 agent.source,
-                agent.provider,
-                agent.model,
-                agent.max_tokens,
-                serde_json::Value::Object(agent.request.clone())
+                agent.model.provider,
+                agent.model.model,
+                agent.model.max_tokens,
+                serde_json::Value::Object(agent.model.request.clone())
             );
             fs::write(dir.join("agents").join(format!("{}.md", agent.name)), header + &agent.prompt)?;
         }
