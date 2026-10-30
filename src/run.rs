@@ -44,7 +44,7 @@ impl Environment {
         let cfg = self.config.providers.get(&def.provider).ok_or_else(|| {
             anyhow!("agent {} names provider {}, which the configuration does not define", def.name, def.provider)
         })?;
-        let provider: Arc<dyn ModelProvider> = Arc::new(OpenAiCompatible::from_config(cfg)?);
+        let provider: Arc<dyn ModelProvider> = Arc::new(OpenAiCompatible::from_config(&def.provider, cfg)?);
         self.providers.insert(def.provider.clone(), provider.clone());
         Ok(provider)
     }

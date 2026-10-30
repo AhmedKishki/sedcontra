@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use anyhow::bail;
 use serde_json::{Value, json};
 
 use super::{ChatRequest, Completion, ModelProvider, ProviderError};
 use crate::config::ProviderConfig;
+use crate::secret::{ApiKey, load_key};
 
 /// Attempts per call when the provider is overloaded (429, 5xx) or the connection fails;
 /// the waits between them are 2 s and 4 s.
@@ -14,17 +14,19 @@ const HTTP_ATTEMPTS: u32 = 3;
 pub struct OpenAiCompatible {
     client: reqwest::Client,
     base_url: String,
-    api_key: String,
+    key: ApiKey,
 }
 
 impl OpenAiCompatible {
-    pub fn from_config(cfg: &ProviderConfig) -> anyhow::Result<Self> {
-        let api_key = std::env::var(&cfg.api_key_env).unwrap_or_default();
-        if api_key.trim().is_empty() {
-            bail!("set the environment variable {} to the provider's API key", cfg.api_key_env);
-        }
+    pub fn from_config(provider: &str, cfg: &ProviderConfig) -> anyhow::Result<Self> {
+        let key = load_key(provider, cfg)?;
         let client = reqwest::Client::builder().timeout(Duration::from_secs(600)).build()?;
-        Ok(OpenAiCompatible { client, base_url: cfg.base_url.trim_end_matches('/').to_string(), api_key })
+        Ok(OpenAiCompatible { client, base_url: cfg.base_url.trim_end_matches('/').to_string(), key })
+    }
+
+    /// Every error text passes through here, so a provider that echoes the key cannot pass it on.
+    fn http_error(&self, error: reqwest::Error) -> ProviderError {
+        ProviderError::Http(self.key.redact(&error.to_string()))
     }
 }
 
@@ -48,25 +50,25 @@ impl ModelProvider for OpenAiCompatible {
             let result = self
                 .client
                 .post(format!("{}/chat/completions", self.base_url))
-                .bearer_auth(&self.api_key)
+                .bearer_auth(self.key.expose())
                 .json(&body)
                 .send()
                 .await;
             let error = match result {
                 Ok(response) => {
                     let status = response.status();
-                    let text = response.text().await.map_err(|e| ProviderError::Http(e.to_string()))?;
+                    let text = response.text().await.map_err(|e| self.http_error(e))?;
                     if status.is_success() {
                         break text;
                     }
-                    let error = ProviderError::Status { status: status.as_u16(), body: text };
+                    let error = ProviderError::Status { status: status.as_u16(), body: self.key.redact(&text) };
                     if !(status.as_u16() == 429 || status.is_server_error()) {
                         return Err(error);
                     }
                     error
                 }
-                Err(e) if e.is_connect() || e.is_request() => ProviderError::Http(e.to_string()),
-                Err(e) => return Err(ProviderError::Http(e.to_string())),
+                Err(e) if e.is_connect() || e.is_request() => self.http_error(e),
+                Err(e) => return Err(self.http_error(e)),
             };
             if attempt == HTTP_ATTEMPTS {
                 return Err(error);

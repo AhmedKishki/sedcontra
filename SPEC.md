@@ -166,7 +166,8 @@ Agent definitions are looked up in layers, as in [pi-interactive-subagents](http
 
 ### Model access
 
-- The first provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from an environment variable named in the configuration, `DEEPSEEK_API_KEY` by default.
+- The first provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from a key file that `cross-examine key set <provider>` writes with mode 600, `~/.config/cross-examine/keys/<provider>` by default, and the tool refuses a key file other users can read. The environment variable named in the configuration, `DEEPSEEK_API_KEY` by default, is a fallback for CI, read only when no key file exists.
+- The key must never reach a model. It travels only in the HTTP `Authorization` header and never enters a prompt, and every provider error is redacted and shortened before it can reach a report, an MCP result, stderr or the run record.
 - The advocate and the adversary return structured data for the orchestrator to check, so every turn requests DeepSeek's JSON output mode, `response_format: {"type": "json_object"}`. The mode requires the prompt to mention JSON and show an example of the structure. It can also return blank content when the model's output was not valid JSON, so the provider retries a blank or unparsable reply twice before the turn fails.
 - Both DeepSeek models run in thinking mode by default. Whether the advocate or the adversary thinks is a model setting in its agent definition.
 
@@ -202,6 +203,7 @@ An `eval` command measures the argument half of the tool against the test split 
   - the tree checks, especially loop detection and the word-for-word quote check;
   - the analyzers, on hand-built trees;
   - the ending of the debate: the early stop at the first satisfied adversary turn and the split into open and unanswered critiques.
+  - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
 
 ## Non-goals
 

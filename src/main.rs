@@ -5,7 +5,9 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use tokio_util::sync::CancellationToken;
 
+use cross_examine::config::Config;
 use cross_examine::run::{Environment, RunFailure, cross_examine};
+use cross_examine::secret;
 
 /// Adversarial cross-examination of a proposal: an advocate reconstructs its argument, an adversary critiques it.
 #[derive(Parser)]
@@ -35,6 +37,11 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Manage provider API keys.
+    Key {
+        #[command(subcommand)]
+        action: KeyAction,
+    },
     /// Score the tool against a local copy of the Arguinas test split.
     Eval {
         /// The dataset file, e.g. 260331-Arguinas-Test-v2.json.
@@ -48,6 +55,16 @@ enum Cmd {
         /// The JSON-lines file for per-record scores; defaults to the runs directory.
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum KeyAction {
+    /// Store a provider's API key in a file only you can read. Run it in your own terminal:
+    /// the key is typed without echo, or read from stdin when piped.
+    Set {
+        /// The provider name from the configuration, e.g. deepseek.
+        provider: String,
     },
 }
 
@@ -80,6 +97,31 @@ async fn main() -> ExitCode {
         }
         Cmd::Eval { dataset, limit, concurrency, out } => {
             eval(cli.config.as_deref(), &dataset, limit, concurrency, out).await
+        }
+        Cmd::Key { action: KeyAction::Set { provider } } => set_key(cli.config.as_deref(), &provider),
+    }
+}
+
+fn set_key(config: Option<&Path>, provider: &str) -> ExitCode {
+    let stored = (|| -> anyhow::Result<PathBuf> {
+        let config = Config::load(config)?;
+        let cfg = config
+            .providers
+            .get(provider)
+            .ok_or_else(|| anyhow::anyhow!("provider {provider} is not in the configuration"))?;
+        let path = secret::key_path(provider, cfg)?;
+        let key = secret::read_key_from_user(provider)?;
+        secret::store_key(&path, &key)?;
+        Ok(path)
+    })();
+    match stored {
+        Ok(path) => {
+            eprintln!("saved the key for {provider} to {}, readable only by you", path.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("cross-examine: {e:#}");
+            ExitCode::from(1)
         }
     }
 }

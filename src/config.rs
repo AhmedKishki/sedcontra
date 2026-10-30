@@ -17,11 +17,15 @@ pub struct Config {
     pub analyzers: AnalyzerConfig,
 }
 
-/// Both fields are required in a file, so a new provider never inherits the DeepSeek key.
+/// A provider's key lives in its own key file (see `secret`), so a new provider never inherits
+/// another provider's key. `api_key_env` is a fallback for CI and is unset unless a file names it.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProviderConfig {
     pub base_url: String,
-    pub api_key_env: String,
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    #[serde(default)]
+    pub api_key_file: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -46,7 +50,8 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         ProviderConfig {
             base_url: "https://api.deepseek.com".into(),
-            api_key_env: "DEEPSEEK_API_KEY".into(),
+            api_key_env: Some("DEEPSEEK_API_KEY".into()),
+            api_key_file: None,
         }
     }
 }

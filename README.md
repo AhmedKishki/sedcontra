@@ -37,7 +37,9 @@ Building needs Rust 1.95 or later, and running needs an API key for DeepSeek or 
 
 ```sh
 cargo build --release
-export DEEPSEEK_API_KEY=...
+
+# Store the key once, in your own terminal; the input is hidden
+target/release/cross-examine key set deepseek
 
 # Command line: the report goes to stdout (md, json or argdown)
 target/release/cross-examine run proposal.md --context context.md --format md
@@ -51,6 +53,22 @@ target/release/cross-examine eval 260331-Arguinas-Test-v2.json --limit 20
 
 `run` exits with 0 whenever it produces a report, so a harness can start it in the background and read the report when the process exits. Over MCP the call waits until the report is ready, and it sends a progress notification after every turn.
 
+## API key
+
+The key travels only in the HTTP `Authorization` header to the provider and never enters a prompt. Every provider error is redacted before it can reach a report, an MCP result or the run record, so even a provider that echoes the key back passes nothing on to a model.
+
+`cross-examine key set <provider>` stores the key in `~/.config/cross-examine/keys/<provider>` on Linux, a file only you can read (mode 600) in a directory only you can open. The tool refuses a key file that other users can read, and `api_key_file` in the provider's configuration moves the file elsewhere. Run the command in your own terminal rather than through an agent, so the key never passes through an agent's context.
+
+The environment variable named by `api_key_env` (`DEEPSEEK_API_KEY` for the default provider) is read only when no key file exists, and it is meant for CI. Exporting it in a shell profile lets any agent with a shell print it, and passing it to an MCP client with `-e` writes it into the client's configuration, where an agent with file tools can read it.
+
+No file on your account is hidden from an agent that runs commands as you, so also deny the agent access to the key directory. In Claude Code, add a deny rule to `~/.claude/settings.json`:
+
+```json
+{ "permissions": { "deny": ["Read(~/.config/cross-examine/keys/**)"] } }
+```
+
+The rule covers Claude Code's file tools and the file commands it recognises in Bash, such as `cat`, but not a script that opens the file itself; [Claude Code's sandbox](https://code.claude.com/docs/en/sandboxing) blocks every process.
+
 ## Configuration
 
 Settings are read from `cross-examine.toml` in the working directory, or else from the user config directory (`~/.config/cross-examine/config.toml` on Linux):
@@ -61,7 +79,8 @@ runs_dir = "runs"         # default: ~/.local/share/cross-examine/runs on Linux
 
 [providers.deepseek]
 base_url = "https://api.deepseek.com"
-api_key_env = "DEEPSEEK_API_KEY"
+api_key_env = "DEEPSEEK_API_KEY"  # CI fallback, read only when no key file exists
+# api_key_file = "/path/to/key"   # default: ~/.config/cross-examine/keys/deepseek
 
 [analyzers]
 stub_max_len = 2          # stubs up to this many claims are suggested for pruning
@@ -84,7 +103,7 @@ The reference reconstructions are themselves model output, so the scores measure
 
 ## Status
 
-Tests with a scripted model cover the tree checks, the analyzers and the ending of the debate. The tool has not yet run against a live model.
+Tests with a scripted model cover the tree checks, the analyzers and the ending of the debate, and tests of the key handling cover its storage and redaction. The tool has not yet run against a live model.
 
 ## References
 

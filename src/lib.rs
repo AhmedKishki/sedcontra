@@ -11,3 +11,4 @@ pub mod provider;
 pub mod record;
 pub mod report;
 pub mod run;
+pub mod secret;
