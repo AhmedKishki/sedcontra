@@ -101,6 +101,10 @@ async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concu
         if tokio::signal::ctrl_c().await.is_ok() {
             on_interrupt.cancel();
         }
+        // A second Ctrl-C stops waiting for the cancelled work to wind down.
+        if tokio::signal::ctrl_c().await.is_ok() {
+            std::process::exit(130);
+        }
     });
 
     match cross_examine::eval::run_eval(env, dataset, limit, concurrency, &out, cancel).await {
@@ -139,6 +143,10 @@ async fn run(config: Option<&Path>, proposal: &Path, context: Option<&Path>, for
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
             on_interrupt.cancel();
+        }
+        // A second Ctrl-C stops waiting for the cancelled work to wind down.
+        if tokio::signal::ctrl_c().await.is_ok() {
+            std::process::exit(130);
         }
     });
 

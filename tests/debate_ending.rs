@@ -124,6 +124,26 @@ async fn limit_splits_open_and_unanswered() {
 }
 
 #[tokio::test]
+async fn cancelled_before_start_calls_no_model() {
+    for _ in 0..40 {
+        let p = Arc::new(ScriptedProvider::new());
+        p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+        let dynamic: Arc<dyn ModelProvider> = p.clone();
+        let advocate = spawn_agent(def("advocate"), dynamic.clone());
+        let adversary = spawn_agent(def("adversary"), dynamic);
+        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2 };
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let err = run_debate(&input, &advocate, &adversary, None, &cancel).await.expect_err("cancelled");
+        assert!(err.cancelled);
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        assert!(p.calls().is_empty(), "a model call started after cancellation");
+    }
+}
+
+#[tokio::test]
 async fn limit_one_leaves_every_critique_unanswered() {
     let p = Arc::new(ScriptedProvider::new());
     p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));

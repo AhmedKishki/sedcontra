@@ -129,11 +129,15 @@ async fn score_record(
     cancel: CancellationToken,
 ) -> RecordScore {
     let failed = |error: String, run_id: Option<String>| RecordScore { index, run_id, error: Some(error), ..Default::default() };
+    // A record still queued when the evaluation is cancelled creates no run.
+    if cancel.is_cancelled() {
+        return failed("cancelled".into(), None);
+    }
     let context = match record.background.trim() {
         "" | "None" => format!("Debate topic: {}", record.title),
         background => format!("Debate topic: {}\n\n{background}", record.title),
     };
-    let output = match cross_examine(env, record.argument.clone(), Some(context), None, cancel).await {
+    let output = match cross_examine(env, record.argument.clone(), Some(context), None, cancel.clone()).await {
         Ok(output) => output,
         Err(RunFailure::Failed { reason, .. }) => return failed(reason, None),
         Err(RunFailure::Cancelled { .. }) => return failed("cancelled".into(), None),
@@ -142,13 +146,15 @@ async fn score_record(
     let lists = Lists::from_report(&report);
 
     let handle = spawn_agent(judge, judge_provider);
-    let judgement = match ask_judge(&handle, &record, &report, &lists).await {
+    let judgement = match ask_judge(&handle, &record, &report, &lists, &cancel).await {
         Ok(judgement) => judgement,
         Err(error) => return failed(error, Some(report.run_id.clone())),
     };
 
-    let rate = |matches: &BTreeMap<String, Option<ClaimId>>, total: usize| {
-        (total > 0).then(|| matches.values().filter(|v| v.is_some()).count() as f64 / total as f64)
+    // Only the expected keys count, so a stray key can never raise a rate.
+    let rate = |matches: &BTreeMap<String, Option<ClaimId>>, prefix: &str, total: usize| {
+        let found = (1..=total).filter(|i| matches.get(&format!("{prefix}{i}")).is_some_and(Option::is_some)).count();
+        (total > 0).then(|| found as f64 / total as f64)
     };
     RecordScore {
         index,
@@ -157,9 +163,9 @@ async fn score_record(
         ending: Some(report.ending.clone()),
         rounds_run: Some(report.rounds_run),
         conclusion_found: Some(judgement.conclusion.is_some()),
-        explicit_in_first: rate(&judgement.explicit, record.explicit_premises.len()),
-        implicit_in_first: rate(&judgement.implicit_first, record.implicit_premises.len()),
-        implicit_recovered: rate(&judgement.implicit_added, record.implicit_premises.len()),
+        explicit_in_first: rate(&judgement.explicit, "E", record.explicit_premises.len()),
+        implicit_in_first: rate(&judgement.implicit_first, "H", record.implicit_premises.len()),
+        implicit_recovered: rate(&judgement.implicit_added, "H", record.implicit_premises.len()),
         fallacy_identified: record.fallacy_info.as_ref().map(|_| judgement.fallacy.is_some()),
     }
 }
@@ -193,16 +199,29 @@ impl Lists {
             critiques: report
                 .ledger
                 .iter()
-                .map(|row| (row.critique.id.clone(), format!("({}) {}", row.critique.target.kind(), row.critique.point)))
+                .map(|row| {
+                    let target = &row.critique.target;
+                    (row.critique.id.clone(), format!("({} on {}) {}", target.kind(), target.describe(), row.critique.point))
+                })
                 .collect(),
         }
     }
 }
 
-async fn ask_judge(handle: &AgentHandle, record: &EvalRecord, report: &Report, lists: &Lists) -> Result<Judgement, String> {
+async fn ask_judge(
+    handle: &AgentHandle,
+    record: &EvalRecord,
+    report: &Report,
+    lists: &Lists,
+    cancel: &CancellationToken,
+) -> Result<Judgement, String> {
     let mut message = judge_message(record, lists);
     for attempt in 0..2 {
-        let reply = handle.turn(message).await.map_err(|e| format!("judge: {e} (run {})", report.run_id))?;
+        let reply = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err("cancelled".into()),
+            reply = handle.turn(message) => reply.map_err(|e| format!("judge: {e} (run {})", report.run_id))?,
+        };
         let errors = match serde_json::from_value::<Judgement>(reply.value) {
             Ok(judgement) => match check_judgement(&judgement, record, lists) {
                 Ok(()) => return Ok(judgement),
@@ -258,6 +277,10 @@ fn check_judgement(judgement: &Judgement, record: &EvalRecord, lists: &Lists) ->
     let mut errors = Vec::new();
 
     let mut check_map = |name: &str, map: &BTreeMap<String, Option<ClaimId>>, prefix: &str, count: usize, allowed: &BTreeSet<String>| {
+        let expected: BTreeSet<String> = (1..=count).map(|i| format!("{prefix}{i}")).collect();
+        for key in map.keys().filter(|k| !expected.contains(*k)) {
+            errors.push(format!("{name} has the key {key}, which names no reference premise"));
+        }
         for i in 1..=count {
             let key = format!("{prefix}{i}");
             match map.get(&key) {

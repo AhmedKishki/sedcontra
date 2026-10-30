@@ -33,16 +33,26 @@ struct AgentMsg {
     reply: oneshot::Sender<Result<TurnReply, AgentError>>,
 }
 
+/// Aborts the actor's task, and any model call in flight, when the last handle drops.
+struct AbortOnDrop(tokio::task::AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[derive(Clone)]
 pub struct AgentHandle {
     name: String,
     tx: mpsc::Sender<AgentMsg>,
+    _task: Arc<AbortOnDrop>,
 }
 
 pub fn spawn_agent(def: AgentDef, provider: Arc<dyn ModelProvider>) -> AgentHandle {
     let (tx, mut rx) = mpsc::channel::<AgentMsg>(4);
     let name = def.name.clone();
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         let mut history = vec![ChatMessage::new("system", def.prompt.clone())];
         while let Some(msg) = rx.recv().await {
             history.push(ChatMessage::new("user", msg.text));
@@ -53,7 +63,7 @@ pub fn spawn_agent(def: AgentDef, provider: Arc<dyn ModelProvider>) -> AgentHand
             let _ = msg.reply.send(result);
         }
     });
-    AgentHandle { name, tx }
+    AgentHandle { name, tx, _task: Arc::new(AbortOnDrop(task.abort_handle())) }
 }
 
 impl AgentHandle {

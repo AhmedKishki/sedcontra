@@ -61,6 +61,21 @@ pub fn render_markdown(report: &Report) -> String {
         };
         let _ = writeln!(out, "- **{}** {}: {}", claim.id, one_line(&claim.text), source);
     }
+    for inference in &tree.inferences {
+        let source = match &inference.origin {
+            Some(origin) => format!("added in round {} for {}", origin.round, origin.critique),
+            None if inference.places.is_empty() => "no connective in the text".into(),
+            None => quotes(&inference.places),
+        };
+        let _ = writeln!(
+            out,
+            "- **{}** {} → {}: {}",
+            inference.id,
+            inference.premises.join(", "),
+            inference.conclusion,
+            source
+        );
+    }
     out.push('\n');
 
     let _ = writeln!(out, "## Changes\n");
@@ -70,13 +85,14 @@ pub fn render_markdown(report: &Report) -> String {
     for change in &report.changes {
         let _ = writeln!(
             out,
-            "- **{}** ({}, {} in round {}): {} The advocate: {}",
+            "- **{}** ({}, {} in round {}): {} The advocate: {}{}",
             change.critique.id,
             target_phrase(&change.critique),
             kind_label(&change.answer),
             change.round,
-            one_line(&change.critique.point),
-            one_line(&change.answer.reasons)
+            sentence(&change.critique.point),
+            sentence(&change.answer.reasons),
+            change_effects(&change.critique, tree)
         );
     }
     if !report.changes.is_empty() {
@@ -105,7 +121,7 @@ pub fn render_markdown(report: &Report) -> String {
             "- **{}** ({}): {} Support: {}",
             critique.id,
             target_phrase(critique),
-            one_line(&critique.point),
+            sentence(&critique.point),
             one_line(&critique.support)
         );
     }
@@ -219,11 +235,32 @@ fn render_adversary(out: &mut String, turn: &AdversaryTurn) {
             "- {} ({}): {} Support: {}",
             critique.id,
             target_phrase(critique),
-            one_line(&critique.point),
+            sentence(&critique.point),
             one_line(&critique.support)
         );
     }
     let _ = writeln!(out, "- Satisfied: {}", if turn.satisfied { "yes" } else { "no" });
+}
+
+/// What a change left in the final tree: the claims and inferences it added, and a premise it removed.
+fn change_effects(critique: &Critique, tree: &Tree) -> String {
+    let from_critique = |origin: &Option<crate::model::Origin>| origin.as_ref().is_some_and(|o| o.critique == critique.id);
+    let mut effects: Vec<String> = tree
+        .claims
+        .iter()
+        .filter(|c| from_critique(&c.origin))
+        .map(|c| format!("added {} ({})", c.id, one_line(&c.text)))
+        .chain(tree.inferences.iter().filter(|i| from_critique(&i.origin)).map(|i| {
+            format!("added {} ({} → {})", i.id, i.premises.join(", "), i.conclusion)
+        }))
+        .collect();
+    if let crate::model::Target::Superfluous { inference, premise } = &critique.target {
+        let removed = tree.inferences.iter().find(|i| &i.id == inference).is_some_and(|i| !i.premises.contains(premise));
+        if removed {
+            effects.push(format!("removed {premise} from {inference}"));
+        }
+    }
+    if effects.is_empty() { String::new() } else { format!(" Effect: {}.", effects.join("; ")) }
 }
 
 fn status_label(status: CritiqueStatus) -> &'static str {
@@ -258,4 +295,13 @@ fn quotes(places: &[String]) -> String {
 
 fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// One line that ends as a sentence, so the next sentence can follow it.
+fn sentence(text: &str) -> String {
+    let line = one_line(text);
+    match line.chars().last() {
+        Some('.' | '!' | '?') | None => line,
+        Some(_) => line + ".",
+    }
 }

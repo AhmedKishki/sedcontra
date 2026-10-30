@@ -41,16 +41,36 @@ impl QuoteIndex {
         QuoteIndex { normalised, starts, ends }
     }
 
-    /// Every non-overlapping occurrence of `quote`, in order. An empty quote finds nothing.
+    /// Every non-overlapping occurrence of `quote`, in order. A quote that starts or ends with a
+    /// letter or digit matches only at a word boundary, so "so" does not match inside "also".
+    /// An empty quote finds nothing.
     pub fn find_all(&self, quote: &str) -> Vec<Span> {
         let needle = normalise(quote);
-        if needle.is_empty() {
+        let Some(first) = needle.chars().next() else {
             return Vec::new();
+        };
+        let last = needle.chars().next_back().unwrap_or(first);
+        let text = &self.normalised;
+        let bounded = |start: usize, end: usize| {
+            let before = text[..start].chars().next_back();
+            let after = text[end..].chars().next();
+            (!first.is_alphanumeric() || !before.is_some_and(char::is_alphanumeric))
+                && (!last.is_alphanumeric() || !after.is_some_and(char::is_alphanumeric))
+        };
+
+        let mut spans = Vec::new();
+        let mut from = 0;
+        while let Some(offset) = text[from..].find(&needle) {
+            let start = from + offset;
+            let end = start + needle.len();
+            if bounded(start, end) {
+                spans.push(Span { start: self.starts[start], end: self.ends[end - 1] });
+                from = end;
+            } else {
+                from = start + first.len_utf8();
+            }
         }
-        self.normalised
-            .match_indices(&needle)
-            .map(|(i, m)| Span { start: self.starts[i], end: self.ends[i + m.len() - 1] })
-            .collect()
+        spans
     }
 
     pub fn contains(&self, quote: &str) -> bool {

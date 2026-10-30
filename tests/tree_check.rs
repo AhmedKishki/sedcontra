@@ -47,6 +47,15 @@ fn markup_must_be_copied() {
 }
 
 #[test]
+fn quote_does_not_match_inside_a_word() {
+    let p = "This is also worth noting here. Rain falls, so streets get wet.";
+    let spans = QuoteIndex::new(p).find_all("so");
+    assert_eq!(spans.len(), 1, "{spans:?}");
+    assert_eq!(&p[spans[0].start..spans[0].end], "so");
+    assert!(spans[0].start > p.find("Rain").unwrap());
+}
+
+#[test]
 fn missing_place_fails_with_quote_in_message() {
     let errs = errors_of("Rain fell.", tree(vec![claim("C1", &["snow fell"])], vec![], &["C1"]));
     assert!(

@@ -17,8 +17,8 @@ pub struct Config {
     pub analyzers: AnalyzerConfig,
 }
 
+/// Both fields are required in a file, so a new provider never inherits the DeepSeek key.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(default)]
 pub struct ProviderConfig {
     pub base_url: String,
     pub api_key_env: String,

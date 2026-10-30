@@ -160,9 +160,11 @@ async fn take_turn<T>(
     let fail = |reason: String, cancelled: bool| DebateError { reason, cancelled, turns: turns.to_vec() };
     let mut text = message;
     for attempt in 0..2 {
+        // The cancel branch is polled first, so no turn starts once the run is cancelled.
         let reply = tokio::select! {
-            reply = agent.turn(text) => reply.map_err(|e| fail(e.to_string(), false))?,
+            biased;
             _ = cancel.cancelled() => return Err(fail("cancelled".into(), true)),
+            reply = agent.turn(text) => reply.map_err(|e| fail(e.to_string(), false))?,
         };
         match check(reply.value) {
             Ok(value) => return Ok((value, reply.raw)),
