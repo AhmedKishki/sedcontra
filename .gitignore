@@ -1,1 +1,7 @@
 /target
+
+# Local reference copy of the GAAR paper (cited in README.md), kept out of the repository
+/Argument Reconstruction as Supervision for Critical Thinking in LLMs.pdf
+
+# Arguinas data states no license: local use only
+*Arguinas*.json
