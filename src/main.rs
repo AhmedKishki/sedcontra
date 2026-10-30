@@ -35,6 +35,20 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Score the tool against a local copy of the Arguinas test split.
+    Eval {
+        /// The dataset file, e.g. 260331-Arguinas-Test-v2.json.
+        dataset: PathBuf,
+        /// Score only the first N records.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Records cross-examined at once.
+        #[arg(long, default_value_t = 4)]
+        concurrency: usize,
+        /// The JSON-lines file for per-record scores; defaults to the runs directory.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy)]
@@ -63,6 +77,41 @@ async fn main() -> ExitCode {
         }
         Cmd::Run { proposal, context, format, out } => {
             run(cli.config.as_deref(), &proposal, context.as_deref(), format, out.as_deref()).await
+        }
+        Cmd::Eval { dataset, limit, concurrency, out } => {
+            eval(cli.config.as_deref(), &dataset, limit, concurrency, out).await
+        }
+    }
+}
+
+async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concurrency: usize, out: Option<PathBuf>) -> ExitCode {
+    let env = match Environment::load(config) {
+        Ok(env) => env,
+        Err(e) => {
+            eprintln!("cross-examine: {e:#}");
+            return ExitCode::from(1);
+        }
+    };
+    let out = out.unwrap_or_else(|| {
+        env.config.runs_dir().join(format!("eval-{}.jsonl", chrono::Local::now().format("%Y%m%d-%H%M%S")))
+    });
+    let cancel = CancellationToken::new();
+    let on_interrupt = cancel.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            on_interrupt.cancel();
+        }
+    });
+
+    match cross_examine::eval::run_eval(env, dataset, limit, concurrency, &out, cancel).await {
+        Ok(scores) => {
+            print!("{}", cross_examine::eval::summarize(&scores));
+            eprintln!("per-record scores: {}", out.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("cross-examine: {e:#}");
+            ExitCode::from(1)
         }
     }
 }

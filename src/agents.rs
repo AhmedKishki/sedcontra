@@ -36,6 +36,7 @@ fn bundled(file: &str) -> Option<&'static str> {
     match file {
         "advocate.md" => Some(include_str!("../agents/advocate.md")),
         "adversary.md" => Some(include_str!("../agents/adversary.md")),
+        "judge.md" => Some(include_str!("../agents/judge.md")),
         STANDARD_FILE => Some(include_str!("../agents/critique-standard.md")),
         _ => None,
     }
