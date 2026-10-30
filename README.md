@@ -1,4 +1,4 @@
-# Sed Contra
+<h1 align="center"><img src="docs/logo.svg" alt="Sed Contra" width="640"></h1>
 
 Sed Contra tests an agent's proposal for connections it invented, premises it never states, premises it does not need, and text its argument never uses. Two model agents, independent of the agent that wrote the proposal, cross-examine it. The report describes the proposal and never rules on it, because what the calling agent does with the report is that agent's decision.
 
