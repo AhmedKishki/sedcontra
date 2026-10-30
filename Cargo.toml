@@ -1,0 +1,30 @@
+[package]
+name = "cross-examine"
+version = "0.1.0"
+edition = "2024"
+description = "Adversarial cross-examination of an agent's proposal: an advocate reconstructs its argument, an adversary critiques it."
+
+[lib]
+name = "cross_examine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cross-examine"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "3.8.0", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1.54", features = ["full"] }
+tokio-util = "0.7"
+reqwest = { version = "0.13.5", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+clap = { version = "4.6", features = ["derive"] }
+toml = "1"
+dirs = "7"
+anyhow = "1"
+thiserror = "2"
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
