@@ -1,24 +1,20 @@
 <h1 align="center"><img src="docs/logo.svg" alt="Sed Contra" width="640"></h1>
 
-## Videtur quod … sed contra
-
-Each article of Thomas Aquinas's *Summa Theologiae* opens with a position that seems to hold, introduced by the words *videtur quod*, "it seems that". Two words then turn the article against it: *sed contra*, "but on the contrary".
-
-The written form comes from the disputations of the medieval universities. There a master set a question, opponents raised objections, and a respondent, usually an advanced student, answered them on the spot. At a later session the master gave his determination, the answer that settled the question.
-
-Sed Contra stages that disputation over an agent's proposal. The proposal is what seems to be so, and the tool that receives it is therefore named `videtur_quod`. Its adversary raises the objections and its advocate answers them, as opponent and respondent did. The master's determination is the one part it leaves out: the agent that called the tool decides what the report means for its proposal, so the report describes the proposal and never rules on it.
-
 ## The principle
 
-An agent cannot cross-examine its own proposal, because it drew every connection in the proposal from its own model. An invented connection therefore reads to it exactly like one that holds. Text that connects to nothing passes just as easily, since it reads as fluently as an argument. Sed Contra supplies the outside check: two model agents, independent of the agent that wrote the proposal, test it for connections it invented, premises it never states, premises it does not need and text its argument never uses.
+An agent that writes a proposal draws every link between its claims from its own model, so it has nothing else to check those links against. A link it made up therefore looks the same to it as a link that holds. A sentence that supports nothing gets past it just as easily.
 
-The two agents argue under one standard, explanatory-critique, which counts a critique only when it shows its point:
+Sed Contra hands that check to two other model agents. The advocate rebuilds the proposal's argument as a tree that shows which claims support which conclusion. Each claim quotes the proposal's own words, so code can check that it really comes from the proposal. The adversary then attacks the tree. Each further round lets the advocate answer every attack and fix the tree, and lets the adversary reply.
 
-- a **gap**, by a case in which an inference's premises hold and its conclusion fails;
-- a **superfluous premise**, by deriving the inference's conclusion without it;
-- a **misreading**, by quoting the passage the advocate misread.
+An attack counts only if it proves its point in one of three ways:
 
-The debate therefore turns on cases, derivations and quotes that the other side can check. The advocate's rejections must meet the same standard, so each rests on a quoted passage of the proposal, a derivation from the proposal's claims or a counter-case of its own. Truth is not one of these grounds: a missing premise that is true is still a premise the proposal never states, so the advocate adds it to the tree.
+- a **gap**: a case where the reasons hold and the conclusion still fails;
+- an **unneeded reason**: the conclusion follows without it;
+- a **misreading**: a quote of the passage the advocate read wrong.
+
+The advocate must meet the same bar when it rejects an attack, so both sides argue with cases and quotes the other can check. When a gap points to a missing reason that happens to be true, the advocate still adds it to the tree, because the proposal relied on it without saying so.
+
+The report lists every attack and how it ended, what the tree had to change, what is still open, and the text the argument never uses. It gives no verdict on the proposal, because the agent that asked decides what to do with it.
 
 ## Architecture
 
@@ -79,7 +75,7 @@ A run goes through five steps:
    - it leaves a critique unanswered.
 
    A rejected turn gets one retry with the failures listed; if the retry fails too, the run fails.
-3. **Debate.** The adversary critiques the tree under explanatory-critique. The advocate accepts, adapts or rejects each critique, revising the tree for each one it accepts or adapts. The adversary then drops or maintains each rejected critique before it critiques the revised tree. The debate ends when the adversary is satisfied or the round limit is reached.
+3. **Debate.** The adversary critiques the tree under the rules above. The advocate accepts, adapts or rejects each critique, revising the tree for each one it accepts or adapts. The adversary then drops or maintains each rejected critique before it critiques the revised tree. The debate ends when the adversary is satisfied or the round limit is reached.
 4. **Findings.** The analyzers compare the final tree with the proposal to find restatements, stretches of text no quote covers, and stubs: claims from which no inference reaches a conclusion.
 5. **Report.** The report states how the debate ended and holds a ledger of every critique with its final status, the final tree in Argdown, the changes the debate forced, the critiques left open or unanswered, the findings and the full transcript.
 
