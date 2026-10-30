@@ -127,7 +127,7 @@ pub async fn cross_examine(
                 .flat_map(|a| a.analyze(&proposal, &outcome.final_tree))
                 .collect();
             let report = build_report(&record, outcome, findings);
-            let markdown = render_markdown(&report, &proposal);
+            let markdown = render_markdown(&report);
             let json = serde_json::to_value(&report).unwrap_or_default();
             let argdown = render_argdown(&report.final_tree.tree);
             if let Err(e) = record.write_report(&markdown, &json, &argdown).and_then(|_| record.set_status("done")) {

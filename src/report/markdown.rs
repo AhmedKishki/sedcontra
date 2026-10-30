@@ -6,7 +6,7 @@ use super::{Report, render_argdown};
 use crate::analyze::Finding;
 use crate::model::{AdversaryTurn, AdvocateTurn, Answer, Critique, CritiqueStatus, Ending, Tree, Turn};
 
-pub fn render_markdown(report: &Report, proposal: &str) -> String {
+pub fn render_markdown(report: &Report) -> String {
     let mut out = String::new();
     let tree = &report.final_tree.tree;
 
