@@ -11,7 +11,7 @@ use anyhow::{Context, anyhow};
 use serde::{Deserialize, Serialize};
 
 const DEFAULTS: &str = include_str!("../config/default.toml");
-const FILE_NAME: &str = "cross-examine.toml";
+const FILE_NAME: &str = "sedcontra.toml";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
@@ -55,7 +55,7 @@ pub struct AnalyzerConfig {
 const MAX_ROUNDS: u32 = 10;
 
 impl Config {
-    /// The built-in defaults, overridden by the first file found: `path`, `./cross-examine.toml`,
+    /// The built-in defaults, overridden by the first file found: `path`, `./sedcontra.toml`,
     /// then `config.toml` in the user config directory.
     pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
         let mut table: toml::Table = DEFAULTS.parse().context("parsing the built-in defaults")?;
@@ -95,8 +95,8 @@ impl Config {
     pub fn runs_dir(&self) -> PathBuf {
         self.runs_dir.clone().unwrap_or_else(|| {
             dirs::data_dir()
-                .map(|d| d.join("cross-examine").join("runs"))
-                .unwrap_or_else(|| PathBuf::from("cross-examine-runs"))
+                .map(|d| d.join("sedcontra").join("runs"))
+                .unwrap_or_else(|| PathBuf::from("sedcontra-runs"))
         })
     }
 }
@@ -114,5 +114,5 @@ fn merge(base: &mut toml::Table, over: toml::Table) {
 }
 
 pub fn config_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("cross-examine"))
+    dirs::config_dir().map(|d| d.join("sedcontra"))
 }

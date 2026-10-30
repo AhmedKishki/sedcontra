@@ -1,4 +1,4 @@
-# Built-in defaults. ./cross-examine.toml, or config.toml in the user config directory,
+# Built-in defaults. ./sedcontra.toml, or config.toml in the user config directory,
 # overrides any value here, table by table.
 
 rounds = 2  # the round limit, 1–10

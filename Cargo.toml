@@ -1,15 +1,15 @@
 [package]
-name = "cross-examine"
+name = "sedcontra"
 version = "0.1.0"
 edition = "2024"
 description = "Adversarial cross-examination of an agent's proposal: an advocate reconstructs its argument, an adversary critiques it."
 
 [lib]
-name = "cross_examine"
+name = "sedcontra"
 path = "src/lib.rs"
 
 [[bin]]
-name = "cross-examine"
+name = "sedcontra"
 path = "src/main.rs"
 
 [dependencies]

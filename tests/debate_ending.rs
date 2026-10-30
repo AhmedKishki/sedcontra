@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use cross_examine::actor::spawn_agent;
-use cross_examine::agents::AgentDef;
-use cross_examine::config::ModelSettings;
-use cross_examine::debate::{DebateInput, run_debate};
-use cross_examine::model::{CritiqueStatus, DebateOutcome, Ending};
-use cross_examine::provider::{ModelProvider, ScriptedProvider};
+use sedcontra::actor::spawn_agent;
+use sedcontra::agents::AgentDef;
+use sedcontra::config::ModelSettings;
+use sedcontra::debate::{DebateInput, run_debate};
+use sedcontra::model::{CritiqueStatus, DebateOutcome, Ending};
+use sedcontra::provider::{ModelProvider, ScriptedProvider};
 use tokio_util::sync::CancellationToken;
 
 const PROPOSAL: &str = "A is true. B is true. So C is true.";

@@ -5,15 +5,15 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use tokio_util::sync::CancellationToken;
 
-use cross_examine::config::Config;
-use cross_examine::run::{Environment, RunFailure, cross_examine};
-use cross_examine::secret;
+use sedcontra::config::Config;
+use sedcontra::run::{Environment, RunFailure, cross_examine};
+use sedcontra::secret;
 
 /// Adversarial cross-examination of a proposal: an advocate reconstructs its argument, an adversary critiques it.
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
-    /// Configuration file; defaults to ./cross-examine.toml, then the user config directory.
+    /// Configuration file; defaults to ./sedcontra.toml, then the user config directory.
     #[arg(long, global = true)]
     config: Option<PathBuf>,
     #[command(subcommand)]
@@ -22,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Serve the cross_examine tool over MCP on stdio.
+    /// Serve the videtur_quod tool over MCP on stdio.
     Serve,
     /// Cross-examine one proposal and print the report.
     Run {
@@ -84,13 +84,13 @@ async fn main() -> ExitCode {
     match cli.cmd {
         Cmd::Serve => {
             let result = match Environment::load(cli.config.as_deref()) {
-                Ok(env) => cross_examine::mcp::serve(env).await,
+                Ok(env) => sedcontra::mcp::serve(env).await,
                 Err(e) => Err(e),
             };
             match result {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
-                    eprintln!("cross-examine: {e:#}");
+                    eprintln!("sedcontra: {e:#}");
                     ExitCode::from(1)
                 }
             }
@@ -123,7 +123,7 @@ fn set_key(config: Option<&Path>, provider: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("cross-examine: {e:#}");
+            eprintln!("sedcontra: {e:#}");
             ExitCode::from(1)
         }
     }
@@ -133,7 +133,7 @@ async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concu
     let mut env = match Environment::load(config) {
         Ok(env) => env,
         Err(e) => {
-            eprintln!("cross-examine: {e:#}");
+            eprintln!("sedcontra: {e:#}");
             return ExitCode::from(1);
         }
     };
@@ -153,14 +153,14 @@ async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concu
         }
     });
 
-    match cross_examine::eval::run_eval(env, dataset, limit, concurrency, &out, cancel).await {
+    match sedcontra::eval::run_eval(env, dataset, limit, concurrency, &out, cancel).await {
         Ok(scores) => {
-            print!("{}", cross_examine::eval::summarize(&scores));
+            print!("{}", sedcontra::eval::summarize(&scores));
             eprintln!("per-record scores: {}", out.display());
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("cross-examine: {e:#}");
+            eprintln!("sedcontra: {e:#}");
             ExitCode::from(1)
         }
     }
@@ -168,7 +168,7 @@ async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concu
 
 async fn run(config: Option<&Path>, proposal: &Path, context: Option<&Path>, format: Format, out: Option<&Path>) -> ExitCode {
     let fail = |message: String| {
-        eprintln!("cross-examine: {message}");
+        eprintln!("sedcontra: {message}");
         ExitCode::from(1)
     };
     let env = match Environment::load(config) {

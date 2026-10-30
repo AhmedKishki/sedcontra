@@ -1,6 +1,6 @@
-# cross-examine
+# Sed Contra
 
-`cross-examine` tests an agent's proposal for connections it invented, premises it never states, premises it does not need, and text its argument never uses. Two model agents, independent of the agent that wrote the proposal, cross-examine it. The report describes the proposal and never rules on it, because what the calling agent does with the report is that agent's decision.
+Sed Contra tests an agent's proposal for connections it invented, premises it never states, premises it does not need, and text its argument never uses. Two model agents, independent of the agent that wrote the proposal, cross-examine it. The report describes the proposal and never rules on it, because what the calling agent does with the report is that agent's decision.
 
 ## Architecture
 
@@ -8,7 +8,7 @@
 flowchart TB
     caller(["Calling agent"])
     subgraph frontends ["Front ends"]
-        mcp["MCP tool cross_examine<br>(serve)"]
+        mcp["MCP tool videtur_quod<br>(serve)"]
         cli["Command line<br>(run)"]
     end
     subgraph orchestrator ["Orchestrator"]
@@ -87,15 +87,15 @@ The paths below are those on Linux.
 2. Store the provider's key in your own terminal, not through an agent, so that the key never passes through an agent's context:
 
    ```sh
-   cross-examine key set deepseek
+   sedcontra key set deepseek
    ```
 
-   The command reads the key without echoing it and stores it in `~/.config/cross-examine/keys/deepseek`, a file only you can read. The environment variable `DEEPSEEK_API_KEY` is a fallback for CI, read only when no key file exists. Do not export it in a shell profile or pass it to an MCP client with `-e`: an agent with a shell can print the first, and an agent with file tools can read the second from the client's configuration.
+   The command reads the key without echoing it and stores it in `~/.config/sedcontra/keys/deepseek`, a file only you can read. The environment variable `DEEPSEEK_API_KEY` is a fallback for CI, read only when no key file exists. Do not export it in a shell profile or pass it to an MCP client with `-e`: an agent with a shell can print the first, and an agent with file tools can read the second from the client's configuration.
 
 3. Deny agents the key directory, because an agent that runs commands as you can read any file you can. In Claude Code, add this rule to `~/.claude/settings.json`:
 
    ```json
-   { "permissions": { "deny": ["Read(~/.config/cross-examine/keys/**)"] } }
+   { "permissions": { "deny": ["Read(~/.config/sedcontra/keys/**)"] } }
    ```
 
    The rule covers Claude Code's file tools and the file commands it recognises in Bash, such as `cat`, but not a script that opens the file itself. [Claude Code's sandbox](https://code.claude.com/docs/en/sandboxing) blocks that script too, because it restricts every process.
@@ -103,21 +103,21 @@ The paths below are those on Linux.
 4. Register the MCP server, here with Claude Code:
 
    ```sh
-   claude mcp add cross-examine -- "$(command -v cross-examine)" serve
+   claude mcp add sedcontra -- "$(command -v sedcontra)" serve
    ```
 
    A client whose tool calls time out before a debate ends can instead run the command line in the background. It prints the report to stdout as `md`, `json` or `argdown`:
 
    ```sh
-   cross-examine run proposal.md --context context.md --format md
+   sedcontra run proposal.md --context context.md --format md
    ```
 
 ### Configuration
 
-The defaults are in [config/default.toml](config/default.toml). A `cross-examine.toml` in the working directory, or else `~/.config/cross-examine/config.toml`, overrides any of its values, table by table.
+The defaults are in [config/default.toml](config/default.toml). A `sedcontra.toml` in the working directory, or else `~/.config/sedcontra/config.toml`, overrides any of its values, table by table.
 
 - To run an agent on another provider, add the provider under `[providers]`, store its key as in step 2, and name the provider in that agent's `[models.<agent>]` table.
-- To change a prompt without rebuilding, put a file with the same name as one in [agents/](agents/) into `.cross-examine/agents/` or `~/.config/cross-examine/agents/`.
+- To change a prompt without rebuilding, put a file with the same name as one in [agents/](agents/) into `.sedcontra/agents/` or `~/.config/sedcontra/agents/`.
 
 ## References
 

@@ -1,6 +1,6 @@
-use cross_examine::analyze::{Analyzer, Finding, Restatement, Stubs, Uncovered};
-use cross_examine::check::{QuoteIndex, check_tree};
-use cross_examine::model::{CheckedTree, Claim, Inference, Tree};
+use sedcontra::analyze::{Analyzer, Finding, Restatement, Stubs, Uncovered};
+use sedcontra::check::{QuoteIndex, check_tree};
+use sedcontra::model::{CheckedTree, Claim, Inference, Tree};
 
 fn claim(id: &str, places: &[&str]) -> Claim {
     Claim {

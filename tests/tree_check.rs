@@ -1,5 +1,5 @@
-use cross_examine::check::{QuoteIndex, check_tree};
-use cross_examine::model::{Claim, Inference, Origin, Tree};
+use sedcontra::check::{QuoteIndex, check_tree};
+use sedcontra::model::{Claim, Inference, Origin, Tree};
 
 fn claim(id: &str, places: &[&str]) -> Claim {
     Claim {

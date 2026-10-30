@@ -1,4 +1,4 @@
-//! The MCP front end: one tool, `cross_examine`, over stdio.
+//! The MCP front end: one tool, `videtur_quod`, over stdio.
 
 use std::sync::Arc;
 
@@ -8,12 +8,12 @@ use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use tokio::sync::mpsc;
 
-use crate::run::{Environment, Progress, RunFailure, cross_examine as run_cross_examination};
+use crate::run::{Environment, Progress, RunFailure, cross_examine};
 
 const TOOL_DESCRIPTION: &str = "Cross-examine a proposal for invented connections, unstated or unneeded premises, and text its argument does not use. An advocate reconstructs the proposal's argument as a tree of claims and inferences, and an adversary critiques it under explanatory-critique: a critique counts only if it shows a case where an inference's premises hold and its conclusion fails, derives a conclusion without one of its premises, or quotes a misreading. The advocate answers every critique, and the debate ends when the adversary is satisfied or a round limit is reached. The report holds a ledger of every critique, the final tree in Argdown, every change the debate forced, the critiques left open or unanswered, restatements, uncovered text and stubs to consider pruning, and the full transcript. It describes the proposal and does not judge it. The call can take several minutes.";
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
-pub struct CrossExamineArgs {
+pub struct VideturQuodArgs {
     /// The text to cross-examine, of any length. The advocate and the adversary see nothing else of your work, so state the argument in full.
     pub proposal: String,
     /// Optional: what you need the proposal for, and any evidence you already have. The advocate and the adversary argue from the proposal, this context and their own knowledge.
@@ -30,10 +30,10 @@ impl Server {
         Server { env: Arc::new(env) }
     }
 
-    #[tool(name = "cross_examine", description = TOOL_DESCRIPTION)]
-    async fn cross_examine(
+    #[tool(name = "videtur_quod", description = TOOL_DESCRIPTION)]
+    async fn videtur_quod(
         &self,
-        Parameters(args): Parameters<CrossExamineArgs>,
+        Parameters(args): Parameters<VideturQuodArgs>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Progress>();
@@ -49,7 +49,7 @@ impl Server {
             })
         });
 
-        let result = run_cross_examination(&self.env, args.proposal, args.context, Some(tx), ctx.ct.clone()).await;
+        let result = cross_examine(&self.env, args.proposal, args.context, Some(tx), ctx.ct.clone()).await;
         if let Some(forwarder) = forwarder {
             let _ = forwarder.await;
         }

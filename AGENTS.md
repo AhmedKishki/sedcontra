@@ -34,7 +34,7 @@
   - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
 - Put each area's tests in one file under `tests/`. A test that needs a model drives it with `ScriptedProvider`, never the network or a real key.
 - Run `cargo test` before committing a change that touches a tested area.
-- Check behaviour against a live model with `cross-examine eval`, not with a test.
+- Check behaviour against a live model with `sedcontra eval`, not with a test.
 
 ## Repository
 
@@ -42,4 +42,4 @@
 - Write the subject as `type(scope): summary`, with the type `feat`, `fix`, `refactor`, `docs` or `chore` and an optional scope. Give what changed and why in the body.
 - Keep each evaluation's results, with the commit and the settings they ran under, in a folder of their own under `eval/`.
 - Never force-add a file that `.gitignore` excludes. Give a new ignore entry a comment saying why.
-- Never run `cross-examine key set`, read `~/.config/cross-examine/keys/` or ask for an API key. The owner stores keys in their own terminal, so that no key enters an agent's context.
+- Never run `sedcontra key set`, read `~/.config/sedcontra/keys/` or ask for an API key. The owner stores keys in their own terminal, so that no key enters an agent's context.

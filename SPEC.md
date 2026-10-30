@@ -1,4 +1,4 @@
-# Adversarial cross-examination: spec
+# Sed Contra: spec
 
 Status: requirements approved by the owner, 2026-10-30, and revised the same day with the names caller, advocate and adversary, the critique ledger, the superfluous-premise critique, the Argdown rendering and the Arguinas evaluation. The prompt wording in the implementation plan is approved. Nothing is built yet.
 
@@ -14,7 +14,9 @@ The application is a box that holds two boxes. The outer box, the orchestrator, 
 
 The caller is autonomous. What it does with the report lies outside this project, whose product is the analysis, so the report describes the proposal and never rules on it.
 
-The application has one function, `cross_examine`, which any agent can reach in two ways: as a tool on an MCP server, or as a command-line process that the caller's harness runs in the background.
+The application has one function, `videtur_quod`, which any agent can reach in two ways: as a tool on an MCP server, or as a command-line process that the caller's harness runs in the background.
+
+The names come from the scholastic disputation. Each article of Aquinas's *Summa Theologiae* opens with *videtur quod*, "it seems that", and the arguments for a position, and *sed contra*, "but on the contrary", opens the case against them. The caller's proposal stands where those first arguments stand, so the function takes the first phrase as its name and the application, Sed Contra, takes the second.
 
 ## Terms
 
@@ -123,7 +125,7 @@ Both front ends are thin layers over the same core and write the same run record
 #### MCP server
 
 - Stdio transport, built on `rmcp`, the official Rust MCP SDK, which implements the 2026-07-28 MCP spec.
-- One tool, `cross_examine`, with two fields:
+- One tool, `videtur_quod`, with two fields:
   - `proposal` (string, required): the text to cross-examine;
   - `context` (string, optional): what the caller needs the proposal for and any evidence it already has.
 - The call waits until the report is ready, as the owner decided. When the client supplies a progress token, the server sends a progress notification after every turn, so the client sees the run advancing.
@@ -166,7 +168,7 @@ Agent definitions are looked up in layers, as in [pi-interactive-subagents](http
 
 ### Model access
 
-- The first provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from a key file that `cross-examine key set <provider>` writes with mode 600, `~/.config/cross-examine/keys/<provider>` by default, and the tool refuses a key file other users can read. The environment variable named in the configuration, `DEEPSEEK_API_KEY` by default, is a fallback for CI, read only when no key file exists.
+- The first provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from a key file that `sedcontra key set <provider>` writes with mode 600, `~/.config/sedcontra/keys/<provider>` by default, and the tool refuses a key file other users can read. The environment variable named in the configuration, `DEEPSEEK_API_KEY` by default, is a fallback for CI, read only when no key file exists.
 - The key must never reach a model. It travels only in the HTTP `Authorization` header and never enters a prompt, and every provider error is redacted and shortened before it can reach a report, an MCP result, stderr or the run record.
 - The advocate and the adversary return structured data for the orchestrator to check, so every turn requests DeepSeek's JSON output mode, `response_format: {"type": "json_object"}`. The mode requires the prompt to mention JSON and show an example of the structure. It can also return blank content when the model's output was not valid JSON, so the provider retries a blank or unparsable reply twice before the turn fails.
 - A reply that reaches `max_tokens` is not a failure. The cut-off reply stays in the agent's history, the agent is told to stop deliberating and give its decision now, and only a second cut-off in the same turn fails the run.

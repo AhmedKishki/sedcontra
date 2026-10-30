@@ -31,7 +31,7 @@ fn bundled(file: &str) -> Option<&'static str> {
 
 /// The first of: the project's file, the user's file, the bundled copy.
 fn find(file: &str) -> anyhow::Result<(String, String)> {
-    let candidates = [Some(PathBuf::from(".cross-examine/agents")), config_dir().map(|d| d.join("agents"))];
+    let candidates = [Some(PathBuf::from(".sedcontra/agents")), config_dir().map(|d| d.join("agents"))];
     for dir in candidates.into_iter().flatten() {
         let path = dir.join(file);
         if path.exists() {
@@ -41,7 +41,7 @@ fn find(file: &str) -> anyhow::Result<(String, String)> {
     }
     bundled(file)
         .map(|text| (text.to_string(), "bundled".to_string()))
-        .ok_or_else(|| anyhow!("no agent file {file} in .cross-examine/agents, the user config or the bundled set"))
+        .ok_or_else(|| anyhow!("no agent file {file} in .sedcontra/agents, the user config or the bundled set"))
 }
 
 pub fn load_agent(name: &str, config: &Config) -> anyhow::Result<AgentDef> {

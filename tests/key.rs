@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use cross_examine::config::ProviderConfig;
-use cross_examine::secret::{load_key, store_key};
+use sedcontra::config::ProviderConfig;
+use sedcontra::secret::{load_key, store_key};
 
 const SECRET: &str = "sk-test-0123456789abcdef";
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cross-examine-key-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("sedcontra-key-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     dir.join("keys").join("deepseek")
 }
@@ -55,5 +55,5 @@ fn key_file_readable_by_others_is_refused() {
 fn missing_key_points_to_key_set() {
     let path = scratch("missing");
     let err = load_key("deepseek", &cfg(&path)).unwrap_err().to_string();
-    assert!(err.contains("cross-examine key set deepseek"), "{err}");
+    assert!(err.contains("sedcontra key set deepseek"), "{err}");
 }

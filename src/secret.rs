@@ -62,7 +62,7 @@ pub fn load_key(provider: &str, cfg: &ProviderConfig) -> anyhow::Result<ApiKey> 
         let key = std::fs::read_to_string(&path).with_context(|| format!("reading the key file {}", path.display()))?;
         let key = key.trim();
         if key.is_empty() {
-            bail!("the key file {} is empty; run `cross-examine key set {provider}`", path.display());
+            bail!("the key file {} is empty; run `sedcontra key set {provider}`", path.display());
         }
         return Ok(ApiKey(key.to_string()));
     }
@@ -73,7 +73,7 @@ pub fn load_key(provider: &str, cfg: &ProviderConfig) -> anyhow::Result<ApiKey> 
         return Ok(ApiKey(key.trim().to_string()));
     }
     bail!(
-        "no API key for provider {provider}: run `cross-examine key set {provider}` in your own terminal{}",
+        "no API key for provider {provider}: run `sedcontra key set {provider}` in your own terminal{}",
         cfg.api_key_env.as_ref().map(|v| format!(", or set {v} for CI")).unwrap_or_default()
     )
 }
