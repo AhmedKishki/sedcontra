@@ -1,6 +1,6 @@
 # Sed Contra: spec
 
-Status: requirements approved by the owner, 2026-10-30, and revised the same day with the names caller, advocate and adversary, the critique ledger, the superfluous-premise critique, the Argdown rendering and the Arguinas evaluation. The prompt wording in the implementation plan is approved. Nothing is built yet.
+Status: requirements approved by the owner, 2026-10-30, and revised the same day with the names caller, advocate and adversary, the critique ledger, the superfluous-premise critique, the Argdown rendering and the Arguinas evaluation. Nothing is built yet.
 
 ## Why this exists
 
@@ -15,8 +15,6 @@ The application is a box that holds two boxes. The outer box, the orchestrator, 
 The caller is autonomous. What it does with the report lies outside this project, whose product is the analysis, so the report describes the proposal and never rules on it.
 
 The application has one function, `videtur_quod`, which any agent can reach in two ways: as a tool on an MCP server, or as a command-line process that the caller's harness runs in the background.
-
-The names come from the scholastic disputation. Each article of Aquinas's *Summa Theologiae* opens with *videtur quod*, "it seems that", and the arguments for a position, and *sed contra*, "but on the contrary", opens the case against them. The caller's proposal stands where those first arguments stand, so the function takes the first phrase as its name and the application, Sed Contra, takes the second.
 
 ## Terms
 
@@ -90,7 +88,7 @@ The turn order is advocate 1, adversary 1, advocate 2, adversary 2, … so that 
 - **The adversary's response.** The adversary drops each rejected critique or maintains it with an answer to the advocate's reasons, checks each adaptation, and critiques the revised tree afresh. It declares itself satisfied when it can show no critique that meets the standard.
 - **Completeness.** The orchestrator checks that the advocate answered every counter-proposal and that the adversary answered every rejection. A turn that skips one gets one retry, and a second skip fails the run.
 - **Ending.** The debate ends at the first adversary turn that declares satisfaction, or when the round limit is reached. When the adversary is not satisfied in its last turn, its critiques fall into two groups. A critique it maintained against the advocate's rejection has been argued by both sides and is an open critique. A critique new in that turn never reached the advocate, so the report labels it unanswered.
-- **Round limit.** Set in configuration and never per call: default 2, range 1–10, and a value outside the range is clamped with a warning so a mistyped setting cannot run without end. The evaluation sets its own limit of 10 through `eval --rounds`.
+- **Round limit.** Set in configuration: default 1, range 1–10, and a value outside the range is clamped with a warning so a mistyped setting cannot run without end. With one round the adversary critiques the advocate's first tree once, and every critique reaches the caller unanswered. The MCP tool has no field for the limit, so every MCP call runs under the configured one. On the command line, `run --rounds` sets the limit of one run, and the evaluation sets its own limit of 10 through `eval --rounds`.
 
 Every turn sees the proposal, the caller's context and every earlier turn of the debate.
 
@@ -136,7 +134,7 @@ Both front ends are thin layers over the same core and write the same run record
 
 #### Command line
 
-- `run <proposal file, or - for stdin> [--context <file>] [--format md|json|argdown] [--out <file>]`. The `argdown` format prints the final tree only.
+- `run <proposal file, or - for stdin> [--context <file>] [--rounds <n>] [--format md|json|argdown] [--out <file>]`. The `argdown` format prints the final tree only.
 - It prints the report to stdout, or writes it to `--out`, and always writes every rendering into the run record.
 - It exits with 0 whenever a report was produced, whatever the ending, and with a non-zero code on failure, printing the reason to stderr.
 - This is the background form: the caller's harness starts the process in the background and reads the report when it exits. Harnesses such as Claude Code notify the agent when a background process exits.

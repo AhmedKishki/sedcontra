@@ -20,7 +20,7 @@
 ## Documentation
 
 - SPEC.md holds the decided design. A change to the behaviour it decides updates SPEC.md in the same commit.
-- README.md holds only the architecture with its diagram, the installation guide and the references. Put any other fact in SPEC.md, `config/default.toml` or the code.
+- README.md holds, in this order, the logo, the story of the name, the principle, the architecture with its diagram, the installation guide and the references. Put any other fact in SPEC.md, `config/default.toml` or the code.
 - State each decision as it stands now. Dates, history and the reasons for a change go in the commit message, where git keeps them.
 - Give every sentence a connection to its neighbours, such as a reason, a condition, a consequence or a contrast, and cut a sentence that connects to nothing. Describe without selling words.
 

@@ -31,6 +31,9 @@ enum Cmd {
         /// A file with context: what the proposal is for and any evidence.
         #[arg(long)]
         context: Option<PathBuf>,
+        /// The round limit of this run, 1–10, in place of the configuration's.
+        #[arg(long)]
+        rounds: Option<u32>,
         #[arg(long, value_enum, default_value_t = Format::Md)]
         format: Format,
         /// Write the report here instead of stdout.
@@ -52,7 +55,7 @@ enum Cmd {
         /// Records cross-examined at once.
         #[arg(long, default_value_t = 4)]
         concurrency: usize,
-        /// The round limit of every record, 1–10; ordinary runs take theirs from the configuration.
+        /// The round limit of every record, 1–10, in place of the configuration's.
         #[arg(long, default_value_t = 10)]
         rounds: u32,
         /// The JSON-lines file for per-record scores; defaults to the runs directory.
@@ -95,8 +98,8 @@ async fn main() -> ExitCode {
                 }
             }
         }
-        Cmd::Run { proposal, context, format, out } => {
-            run(cli.config.as_deref(), &proposal, context.as_deref(), format, out.as_deref()).await
+        Cmd::Run { proposal, context, rounds, format, out } => {
+            run(cli.config.as_deref(), &proposal, context.as_deref(), rounds, format, out.as_deref()).await
         }
         Cmd::Eval { dataset, limit, concurrency, rounds, out } => {
             eval(cli.config.as_deref(), &dataset, limit, concurrency, rounds, out).await
@@ -166,15 +169,18 @@ async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concu
     }
 }
 
-async fn run(config: Option<&Path>, proposal: &Path, context: Option<&Path>, format: Format, out: Option<&Path>) -> ExitCode {
+async fn run(config: Option<&Path>, proposal: &Path, context: Option<&Path>, rounds: Option<u32>, format: Format, out: Option<&Path>) -> ExitCode {
     let fail = |message: String| {
         eprintln!("sedcontra: {message}");
         ExitCode::from(1)
     };
-    let env = match Environment::load(config) {
+    let mut env = match Environment::load(config) {
         Ok(env) => env,
         Err(e) => return fail(format!("{e:#}")),
     };
+    if let Some(rounds) = rounds {
+        env.config.rounds = rounds;
+    }
     let proposal = match read_input(proposal) {
         Ok(text) => text,
         Err(e) => return fail(format!("reading the proposal: {e}")),

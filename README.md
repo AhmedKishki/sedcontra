@@ -1,6 +1,24 @@
 <h1 align="center"><img src="docs/logo.svg" alt="Sed Contra" width="640"></h1>
 
-Sed Contra tests an agent's proposal for connections it invented, premises it never states, premises it does not need, and text its argument never uses. Two model agents, independent of the agent that wrote the proposal, cross-examine it. The report describes the proposal and never rules on it, because what the calling agent does with the report is that agent's decision.
+## Videtur quod … sed contra
+
+Each article of Thomas Aquinas's *Summa Theologiae* opens with a position that seems to hold, introduced by the words *videtur quod*, "it seems that". Two words then turn the article against it: *sed contra*, "but on the contrary".
+
+The written form comes from the disputations of the medieval universities. There a master set a question, opponents raised objections, and a respondent, usually an advanced student, answered them on the spot. At a later session the master gave his determination, the answer that settled the question.
+
+Sed Contra stages that disputation over an agent's proposal. The proposal is what seems to be so, and the tool that receives it is therefore named `videtur_quod`. Its adversary raises the objections and its advocate answers them, as opponent and respondent did. The master's determination is the one part it leaves out: the agent that called the tool decides what the report means for its proposal, so the report describes the proposal and never rules on it.
+
+## The principle
+
+An agent cannot cross-examine its own proposal, because it drew every connection in the proposal from its own model. An invented connection therefore reads to it exactly like one that holds. Text that connects to nothing passes just as easily, since it reads as fluently as an argument. Sed Contra supplies the outside check: two model agents, independent of the agent that wrote the proposal, test it for connections it invented, premises it never states, premises it does not need and text its argument never uses.
+
+The two agents argue under one standard, explanatory-critique, which counts a critique only when it shows its point:
+
+- a **gap**, by a case in which an inference's premises hold and its conclusion fails;
+- a **superfluous premise**, by deriving the inference's conclusion without it;
+- a **misreading**, by quoting the passage the advocate misread.
+
+The debate therefore turns on cases, derivations and quotes that the other side can check. The advocate's rejections must meet the same standard, so each rests on a quoted passage of the proposal, a derivation from the proposal's claims or a counter-case of its own. Truth is not one of these grounds: a missing premise that is true is still a premise the proposal never states, so the advocate adds it to the tree.
 
 ## Architecture
 
@@ -61,7 +79,7 @@ A run goes through five steps:
    - it leaves a critique unanswered.
 
    A rejected turn gets one retry with the failures listed; if the retry fails too, the run fails.
-3. **Debate.** The adversary critiques the tree under explanatory-critique, a standard that binds both sides. A critique counts only if it shows a gap, a case in which an inference's premises hold and its conclusion fails; a superfluous premise, by deriving the conclusion without it; or a misreading, by quoting the passage the advocate misread. The advocate accepts, adapts or rejects each critique, revising the tree for each one it accepts or adapts. The adversary then drops or maintains each rejected critique before it critiques the revised tree. The debate ends when the adversary is satisfied or the round limit is reached.
+3. **Debate.** The adversary critiques the tree under explanatory-critique. The advocate accepts, adapts or rejects each critique, revising the tree for each one it accepts or adapts. The adversary then drops or maintains each rejected critique before it critiques the revised tree. The debate ends when the adversary is satisfied or the round limit is reached.
 4. **Findings.** The analyzers compare the final tree with the proposal to find restatements, stretches of text no quote covers, and stubs: claims from which no inference reaches a conclusion.
 5. **Report.** The report states how the debate ended and holds a ledger of every critique with its final status, the final tree in Argdown, the changes the debate forced, the critiques left open or unanswered, the findings and the full transcript.
 
