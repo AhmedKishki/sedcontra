@@ -52,6 +52,9 @@ enum Cmd {
         /// Records cross-examined at once.
         #[arg(long, default_value_t = 4)]
         concurrency: usize,
+        /// The round limit of every record, 1–10; ordinary runs take theirs from the configuration.
+        #[arg(long, default_value_t = 10)]
+        rounds: u32,
         /// The JSON-lines file for per-record scores; defaults to the runs directory.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -95,8 +98,8 @@ async fn main() -> ExitCode {
         Cmd::Run { proposal, context, format, out } => {
             run(cli.config.as_deref(), &proposal, context.as_deref(), format, out.as_deref()).await
         }
-        Cmd::Eval { dataset, limit, concurrency, out } => {
-            eval(cli.config.as_deref(), &dataset, limit, concurrency, out).await
+        Cmd::Eval { dataset, limit, concurrency, rounds, out } => {
+            eval(cli.config.as_deref(), &dataset, limit, concurrency, rounds, out).await
         }
         Cmd::Key { action: KeyAction::Set { provider } } => set_key(cli.config.as_deref(), &provider),
     }
@@ -126,14 +129,15 @@ fn set_key(config: Option<&Path>, provider: &str) -> ExitCode {
     }
 }
 
-async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concurrency: usize, out: Option<PathBuf>) -> ExitCode {
-    let env = match Environment::load(config) {
+async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concurrency: usize, rounds: u32, out: Option<PathBuf>) -> ExitCode {
+    let mut env = match Environment::load(config) {
         Ok(env) => env,
         Err(e) => {
             eprintln!("cross-examine: {e:#}");
             return ExitCode::from(1);
         }
     };
+    env.config.rounds = rounds;
     let out = out.unwrap_or_else(|| {
         env.config.runs_dir().join(format!("eval-{}.jsonl", chrono::Local::now().format("%Y%m%d-%H%M%S")))
     });

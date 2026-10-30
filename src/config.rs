@@ -51,6 +51,9 @@ pub struct AnalyzerConfig {
     pub uncovered_min_words: usize,
 }
 
+/// The highest round limit allowed, so a mistyped setting cannot run a debate without end.
+const MAX_ROUNDS: u32 = 10;
+
 impl Config {
     /// The built-in defaults, overridden by the first file found: `path`, `./cross-examine.toml`,
     /// then `config.toml` in the user config directory.
@@ -82,9 +85,9 @@ impl Config {
     }
 
     pub fn round_limit(&self) -> u32 {
-        let clamped = self.rounds.clamp(1, 3);
+        let clamped = self.rounds.clamp(1, MAX_ROUNDS);
         if clamped != self.rounds {
-            eprintln!("warning: rounds = {} is outside 1–3; using {clamped}", self.rounds);
+            eprintln!("warning: rounds = {} is outside 1–{MAX_ROUNDS}; using {clamped}", self.rounds);
         }
         clamped
     }

@@ -5,3 +5,6 @@ Argument Reconstruction as Supervision for Critical Thinking in LLMs.pdf
 
 # Arguinas data states no license: local use only
 *Arguinas*.json
+
+# Evaluation results and the run folders behind them
+/eval/

@@ -88,7 +88,7 @@ The turn order is advocate 1, adversary 1, advocate 2, adversary 2, … so that 
 - **The adversary's response.** The adversary drops each rejected critique or maintains it with an answer to the advocate's reasons, checks each adaptation, and critiques the revised tree afresh. It declares itself satisfied when it can show no critique that meets the standard.
 - **Completeness.** The orchestrator checks that the advocate answered every counter-proposal and that the adversary answered every rejection. A turn that skips one gets one retry, and a second skip fails the run.
 - **Ending.** The debate ends at the first adversary turn that declares satisfaction, or when the round limit is reached. When the adversary is not satisfied in its last turn, its critiques fall into two groups. A critique it maintained against the advocate's rejection has been argued by both sides and is an open critique. A critique new in that turn never reached the advocate, so the report labels it unanswered.
-- **Round limit.** Set in configuration and never per call: default 2, range 1–3. The owner chose this setting for the earlier design, and it carries over.
+- **Round limit.** Set in configuration and never per call: default 2, range 1–10, and a value outside the range is clamped with a warning so a mistyped setting cannot run without end. The evaluation sets its own limit of 10 through `eval --rounds`.
 
 Every turn sees the proposal, the caller's context and every earlier turn of the debate.
 
