@@ -80,15 +80,15 @@ The built-in defaults are in [config/default.toml](config/default.toml). A `cros
 rounds = 2                        # the round limit, 1–3
 runs_dir = "runs"                 # default: ~/.local/share/cross-examine/runs on Linux
 
-[models.default]                  # the model every agent runs on
+[models.advocate]                 # by default both agents run on deepseek-flash
 provider = "deepseek"
 model = "deepseek-flash"
 max_tokens = 32768
 
-[models.adversary]                # optional: overrides single fields for one agent
-model = "deepseek-v4-pro"
+[models.adversary]                # set only what differs, e.g. a stronger critic:
+model = "deepseek-v4-pro"         # provider and max_tokens stay as in the defaults
 
-[models.default.request]          # optional: merged into every request body
+[models.adversary.request]        # optional: merged into this agent's request body
 thinking = { type = "disabled" }
 
 [providers.deepseek]              # any provider with an OpenAI-format chat API
@@ -101,7 +101,7 @@ stub_max_len = 2                  # stubs up to this many claims are suggested f
 uncovered_min_words = 4           # shorter uncovered stretches are ignored
 ```
 
-To run on another provider, add it under `[providers]`, store its key with `cross-examine key set <name>`, and name it in `[models.default]` or in a single agent's table.
+Each agent has its own `[models.<agent>]` table (`advocate`, `adversary`, and `judge` for `eval`), and all three default to `deepseek-flash`. To run an agent on another provider, add the provider under `[providers]`, store its key with `cross-examine key set <name>`, and name it in that agent's table.
 
 The prompts live in [agents/](agents/): `advocate.md`, `adversary.md`, `critique-standard.md` and `judge.md`. A prompt names no provider and no model, because the configuration assigns each agent its model. A file with the same name in `.cross-examine/agents/` or `~/.config/cross-examine/agents/` overrides the bundled one, so a prompt or the critique standard can change without a rebuild.
 

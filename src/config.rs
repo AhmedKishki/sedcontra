@@ -1,8 +1,8 @@
 //! The configuration: models, providers, round limit, analyzer thresholds and the runs directory.
 //!
 //! The built-in defaults live in `config/default.toml`, not in code; a user file overrides them
-//! table by table. No agent and no line of code names a provider: the agents' models come from
-//! `[models.default]` and `[models.<agent>]`.
+//! table by table. No agent and no line of code names a provider: each agent's model comes from
+//! its own `[models.<agent>]` table.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -18,31 +18,19 @@ pub struct Config {
     pub rounds: u32,
     #[serde(default)]
     pub runs_dir: Option<PathBuf>,
-    pub models: BTreeMap<String, ModelOverride>,
+    pub models: BTreeMap<String, ModelSettings>,
     pub providers: BTreeMap<String, ProviderConfig>,
     pub analyzers: AnalyzerConfig,
 }
 
-/// One table of `[models]`: `default` sets every field, an agent's table overrides some of them.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct ModelOverride {
-    #[serde(default)]
-    pub provider: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub max_tokens: Option<u32>,
-    #[serde(default)]
-    pub request: Option<toml::Table>,
-}
-
-/// The model an agent runs on, resolved from `[models.default]` and the agent's own table.
-#[derive(Serialize, Clone, Debug)]
+/// The model an agent runs on: its `[models.<agent>]` table.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ModelSettings {
     pub provider: String,
     pub model: String,
     pub max_tokens: u32,
     /// Merged over the request body, e.g. `thinking`.
+    #[serde(default)]
     pub request: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -85,24 +73,12 @@ impl Config {
         toml::Value::Table(table).try_into().with_context(|| format!("reading the configuration from {source}"))
     }
 
-    /// The agent's model: `[models.default]` with the fields of `[models.<agent>]` laid over it.
+    /// The agent's model, from its own `[models.<agent>]` table.
     pub fn model_for(&self, agent: &str) -> anyhow::Result<ModelSettings> {
-        let default = self.models.get("default").cloned().unwrap_or_default();
-        let own = self.models.get(agent).cloned().unwrap_or_default();
-        let missing = |field: &str| anyhow!("no {field} for agent {agent}: set it in [models.default] or [models.{agent}]");
-        let request = match own.request.or(default.request) {
-            Some(table) => match serde_json::to_value(table)? {
-                serde_json::Value::Object(map) => map,
-                _ => serde_json::Map::new(),
-            },
-            None => serde_json::Map::new(),
-        };
-        Ok(ModelSettings {
-            provider: own.provider.or(default.provider).ok_or_else(|| missing("provider"))?,
-            model: own.model.or(default.model).ok_or_else(|| missing("model"))?,
-            max_tokens: own.max_tokens.or(default.max_tokens).ok_or_else(|| missing("max_tokens"))?,
-            request,
-        })
+        self.models
+            .get(agent)
+            .cloned()
+            .ok_or_else(|| anyhow!("the configuration has no [models.{agent}] table for agent {agent}"))
     }
 
     pub fn round_limit(&self) -> u32 {
