@@ -49,8 +49,17 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Serve => {
-            eprintln!("cross-examine: serve is not yet implemented");
-            ExitCode::from(1)
+            let result = match Environment::load(cli.config.as_deref()) {
+                Ok(env) => cross_examine::mcp::serve(env).await,
+                Err(e) => Err(e),
+            };
+            match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("cross-examine: {e:#}");
+                    ExitCode::from(1)
+                }
+            }
         }
         Cmd::Run { proposal, context, format, out } => {
             run(cli.config.as_deref(), &proposal, context.as_deref(), format, out.as_deref()).await
