@@ -180,15 +180,17 @@ Agent definitions are looked up in layers, as in [pi-interactive-subagents](http
 
 ## Evaluation
 
-An `eval` command measures the argument half of the tool against the test split of [Arguinas](https://github.com/GyoukChu/Arguinas): 241 debate arguments, each with a reconstruction that GAAR made on Claude Sonnet 4.5. Each record runs one ordinary cross-examination, with the argument as the proposal and the debate topic and background as context. A judge agent, defined like the advocate and the adversary, then matches the report against the reference reconstruction.
+An `eval` command measures the argument half of the tool against the test split of [Arguinas](https://github.com/GyoukChu/Arguinas): 241 debate arguments, each with a reconstruction that GAAR made on Claude Sonnet 4.5. Each record runs one ordinary cross-examination, with the argument as the proposal and the debate topic and background as context. A judge agent, defined like the advocate and the adversary, then matches the reference reconstruction against two trees of the run, the advocate's first tree and the final tree: for the conclusion, each explicit premise and each implicit premise, which claim of the tree states it.
 
-| Metric | Our output | Reference |
+| Measure | Our output | Reference |
 | --- | --- | --- |
-| Conclusion found | the conclusions marked in the final tree | `conclusion` |
-| Explicit premises in the first tree | the claims of the advocate's first tree | `explicit_premises` |
-| Implicit premises in the first tree, where lower is better because it measures the first anti-goal | the claims of the advocate's first tree | `implicit_premises` |
-| Implicit premises recovered | the claims added during the debate | `implicit_premises` |
+| Conclusion, explicit premises and implicit premises in the first tree | the claims of the advocate's first tree | `conclusion`, `explicit_premises`, `implicit_premises` |
+| The same three in the final tree | the claims of the final tree | the same |
+| Reference conclusion marked as a conclusion | the conclusions the final tree marks | `conclusion` |
+| Stopped one step short, when the final tree lacks the reference conclusion | a conclusion the final tree marks states a reference premise | `explicit_premises`, `implicit_premises` |
 | Fallacy identified, on the 49 records with a fallacy label | the critiques in the ledger | `fallacy_info.rationale` |
+
+The first tree states what the text says, so a low share of implicit premises there is intended; the rise from the first tree to the final tree is what the debate added. The judge's matches are kept in each record's score, so a match can be checked against the trees in the run folder.
 
 - The reference reconstructions are model output, so the scores measure agreement with GAAR, not correctness. GAAR also forces every argument into deductive validity and adds bridging premises that a causal or analogical argument does not need, so a recovery rate below 1 is expected.
 - The data supports no measure of superfluous premises. In 131 of the 241 records the streamlined premise list drops the premise labels, and the 110 labelled records contain 7 unneeded premises in all.

@@ -46,16 +46,14 @@ pub struct Reconstruction {
     pub conclusion: String,
 }
 
+/// The judge's matches. The reference statements are the conclusion `K`, the explicit premises
+/// `E1…` and the implicit premises `H1…`; for each, the claim of each tree that states it.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Judgement {
     #[serde(default)]
-    pub conclusion: Option<ClaimId>,
+    pub first_tree: BTreeMap<String, Option<ClaimId>>,
     #[serde(default)]
-    pub explicit: BTreeMap<String, Option<ClaimId>>,
-    #[serde(default)]
-    pub implicit_first: BTreeMap<String, Option<ClaimId>>,
-    #[serde(default)]
-    pub implicit_added: BTreeMap<String, Option<ClaimId>>,
+    pub final_tree: BTreeMap<String, Option<ClaimId>>,
     #[serde(default)]
     pub fallacy: Option<CritiqueId>,
 }
@@ -67,11 +65,19 @@ pub struct RecordScore {
     pub error: Option<String>,
     pub ending: Option<Ending>,
     pub rounds_run: Option<u32>,
-    pub conclusion_found: Option<bool>,
+    pub conclusion_in_first: Option<bool>,
+    pub conclusion_in_final: Option<bool>,
+    /// The final tree states the reference conclusion in a claim it marks as a conclusion.
+    pub conclusion_marked: Option<bool>,
+    /// The final tree lacks the reference conclusion, but a conclusion it marks states a reference premise.
+    pub stopped_short: Option<bool>,
     pub explicit_in_first: Option<f64>,
+    pub explicit_in_final: Option<f64>,
     pub implicit_in_first: Option<f64>,
-    pub implicit_recovered: Option<f64>,
+    pub implicit_in_final: Option<f64>,
     pub fallacy_identified: Option<bool>,
+    /// The judge's matches, kept so a person can audit them against the run folder's trees.
+    pub judgement: Option<Judgement>,
 }
 
 pub async fn run_eval(
@@ -151,37 +157,46 @@ async fn score_record(
         Err(error) => return failed(error, Some(report.run_id.clone())),
     };
 
+    let found = |matches: &BTreeMap<String, Option<ClaimId>>, key: &str| matches.get(key).is_some_and(Option::is_some);
     // Only the expected keys count, so a stray key can never raise a rate.
     let rate = |matches: &BTreeMap<String, Option<ClaimId>>, prefix: &str, total: usize| {
         let found = (1..=total).filter(|i| matches.get(&format!("{prefix}{i}")).is_some_and(Option::is_some)).count();
         (total > 0).then(|| found as f64 / total as f64)
     };
+    let (first, last) = (&judgement.first_tree, &judgement.final_tree);
+    let conclusion_marked = last.get("K").cloned().flatten().is_some_and(|id| lists.marked.contains(&id));
+    let stopped_short = !found(last, "K")
+        && last.iter().any(|(key, id)| key != "K" && id.as_ref().is_some_and(|id| lists.marked.contains(id)));
     RecordScore {
         index,
         run_id: Some(report.run_id.clone()),
         error: None,
         ending: Some(report.ending.clone()),
         rounds_run: Some(report.rounds_run),
-        conclusion_found: Some(judgement.conclusion.is_some()),
-        explicit_in_first: rate(&judgement.explicit, "E", record.explicit_premises.len()),
-        implicit_in_first: rate(&judgement.implicit_first, "H", record.implicit_premises.len()),
-        implicit_recovered: rate(&judgement.implicit_added, "H", record.implicit_premises.len()),
+        conclusion_in_first: Some(found(first, "K")),
+        conclusion_in_final: Some(found(last, "K")),
+        conclusion_marked: Some(conclusion_marked),
+        stopped_short: Some(stopped_short),
+        explicit_in_first: rate(first, "E", record.explicit_premises.len()),
+        explicit_in_final: rate(last, "E", record.explicit_premises.len()),
+        implicit_in_first: rate(first, "H", record.implicit_premises.len()),
+        implicit_in_final: rate(last, "H", record.implicit_premises.len()),
         fallacy_identified: record.fallacy_info.as_ref().map(|_| judgement.fallacy.is_some()),
+        judgement: Some(judgement),
     }
 }
 
-/// Our side of the comparison, each as (id, text).
+/// Our side of the comparison, each as (id, text), and the conclusions the final tree marks.
 struct Lists {
-    conclusions: Vec<(String, String)>,
     first_tree: Vec<(String, String)>,
-    added: Vec<(String, String)>,
+    final_tree: Vec<(String, String)>,
+    marked: BTreeSet<ClaimId>,
     critiques: Vec<(String, String)>,
 }
 
 impl Lists {
     fn from_report(report: &Report) -> Self {
         let tree = &report.final_tree.tree;
-        let text_of = |id: &str| tree.claims.iter().find(|c| c.id == id).map(|c| c.text.clone()).unwrap_or_default();
         let first_tree = report
             .transcript
             .iter()
@@ -193,9 +208,9 @@ impl Lists {
             })
             .unwrap_or_default();
         Lists {
-            conclusions: tree.conclusions.iter().map(|id| (id.clone(), text_of(id))).collect(),
             first_tree,
-            added: tree.claims.iter().filter(|c| c.origin.is_some()).map(|c| (c.id.clone(), c.text.clone())).collect(),
+            final_tree: tree.claims.iter().map(|c| (c.id.clone(), c.text.clone())).collect(),
+            marked: tree.conclusions.iter().cloned().collect(),
             critiques: report
                 .ledger
                 .iter()
@@ -256,15 +271,14 @@ fn judge_message(record: &EvalRecord, lists: &Lists) -> String {
         items.iter().enumerate().map(|(i, t)| (format!("{prefix}{}", i + 1), t.clone())).collect()
     };
 
-    let _ = writeln!(out, "## Reference conclusion\n\n{}\n", record.sections.reconstruction.conclusion.trim());
+    section(&mut out, "Reference conclusion", vec![("K".into(), record.sections.reconstruction.conclusion.clone())]);
     section(&mut out, "Reference explicit premises", labelled("E", &record.explicit_premises));
     section(&mut out, "Reference implicit premises", labelled("H", &record.implicit_premises));
     if let Some(fallacy) = &record.fallacy_info {
         let _ = writeln!(out, "## Reference fallacy rationale\n\n{}\n", fallacy.rationale.trim());
     }
-    section(&mut out, "Marked conclusions of the tested reconstruction", lists.conclusions.clone());
     section(&mut out, "Claims of the first tree", lists.first_tree.clone());
-    section(&mut out, "Added claims", lists.added.clone());
+    section(&mut out, "Claims of the final tree", lists.final_tree.clone());
     section(&mut out, "Critiques", lists.critiques.clone());
     out.push_str("Answer with the JSON object your instructions describe.");
     out
@@ -272,35 +286,28 @@ fn judge_message(record: &EvalRecord, lists: &Lists) -> String {
 
 fn check_judgement(judgement: &Judgement, record: &EvalRecord, lists: &Lists) -> Result<(), Vec<String>> {
     let ids = |list: &[(String, String)]| -> BTreeSet<String> { list.iter().map(|(id, _)| id.clone()).collect() };
-    let (conclusions, first, added, critiques) =
-        (ids(&lists.conclusions), ids(&lists.first_tree), ids(&lists.added), ids(&lists.critiques));
+    let (first, last, critiques) = (ids(&lists.first_tree), ids(&lists.final_tree), ids(&lists.critiques));
+    let expected: BTreeSet<String> = std::iter::once("K".to_string())
+        .chain((1..=record.explicit_premises.len()).map(|i| format!("E{i}")))
+        .chain((1..=record.implicit_premises.len()).map(|i| format!("H{i}")))
+        .collect();
     let mut errors = Vec::new();
 
-    let mut check_map = |name: &str, map: &BTreeMap<String, Option<ClaimId>>, prefix: &str, count: usize, allowed: &BTreeSet<String>| {
-        let expected: BTreeSet<String> = (1..=count).map(|i| format!("{prefix}{i}")).collect();
-        for key in map.keys().filter(|k| !expected.contains(*k)) {
-            errors.push(format!("{name} has the key {key}, which names no reference premise"));
+    for (name, matches, allowed) in [("first_tree", &judgement.first_tree, &first), ("final_tree", &judgement.final_tree, &last)] {
+        for key in matches.keys().filter(|k| !expected.contains(*k)) {
+            errors.push(format!("{name} has the key {key}, which names no reference statement"));
         }
-        for i in 1..=count {
-            let key = format!("{prefix}{i}");
-            match map.get(&key) {
+        for key in &expected {
+            match matches.get(key) {
                 None => errors.push(format!("{name} has no entry for {key}")),
                 Some(Some(id)) if !allowed.contains(id) => {
-                    errors.push(format!("{name}.{key} names {id}, which is not in the list it is matched against"))
+                    errors.push(format!("{name}.{key} names {id}, which is not a claim of that tree"))
                 }
                 _ => {}
             }
         }
-    };
-    check_map("explicit", &judgement.explicit, "E", record.explicit_premises.len(), &first);
-    check_map("implicit_first", &judgement.implicit_first, "H", record.implicit_premises.len(), &first);
-    check_map("implicit_added", &judgement.implicit_added, "H", record.implicit_premises.len(), &added);
-
-    if let Some(id) = &judgement.conclusion
-        && !conclusions.contains(id)
-    {
-        errors.push(format!("conclusion names {id}, which is not a marked conclusion"));
     }
+
     if let Some(id) = &judgement.fallacy
         && !critiques.contains(id)
     {
@@ -320,19 +327,41 @@ pub fn summarize(scores: &[RecordScore]) -> String {
         let mean = (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64);
         (mean, values.len())
     };
+    let cell = |mean: Option<f64>| mean.map(|m| format!("{m:.2}")).unwrap_or_else(|| "–".into());
     let rows = [
-        ("Conclusion found", mean_bool(|s| s.conclusion_found)),
-        ("Explicit premises in the first tree", mean_rate(|s| s.explicit_in_first)),
-        ("Implicit premises in the first tree (lower is better)", mean_rate(|s| s.implicit_in_first)),
-        ("Implicit premises recovered", mean_rate(|s| s.implicit_recovered)),
-        ("Fallacy identified", mean_bool(|s| s.fallacy_identified)),
+        ("Conclusion", mean_bool(|s| s.conclusion_in_first), mean_bool(|s| s.conclusion_in_final)),
+        ("Explicit premises", mean_rate(|s| s.explicit_in_first), mean_rate(|s| s.explicit_in_final)),
+        ("Implicit premises", mean_rate(|s| s.implicit_in_first), mean_rate(|s| s.implicit_in_final)),
     ];
 
-    let mut out = String::from("| Metric | Mean | Records scored |\n| --- | --- | --- |\n");
-    for (name, (mean, n)) in rows {
-        let mean = mean.map(|m| format!("{m:.2}")).unwrap_or_else(|| "–".into());
-        let _ = writeln!(out, "| {name} | {mean} | {n} |");
+    let mut out = String::from(
+        "The share of the reference reconstruction that each tree states:\n\n\
+         | Reference part | First tree | Final tree | Records |\n| --- | --- | --- | --- |\n",
+    );
+    for (name, first, last) in rows {
+        let _ = writeln!(out, "| {name} | {} | {} | {} |", cell(first.0), cell(last.0), last.1);
     }
+    out.push_str(
+        "\nThe first tree states what the text says, so a low share of implicit premises there is intended; \
+         the rise from the first tree to the final tree is what the debate added.\n",
+    );
+
+    let absent = scores.iter().filter(|s| s.conclusion_in_final == Some(false)).count();
+    let short = scores.iter().filter(|s| s.stopped_short == Some(true)).count();
+    let (marked, scored) = mean_bool(|s| s.conclusion_marked);
+    let (fallacy, labelled) = mean_bool(|s| s.fallacy_identified);
+    let _ = writeln!(
+        out,
+        "\nThe final tree marks the reference conclusion as a conclusion in {} of {scored} records. \
+         Of the {absent} records whose final tree lacks it, {short} end on a claim that the reference uses as a premise.",
+        marked.map(|m| (m * scored as f64).round() as usize).unwrap_or(0),
+    );
+    let _ = writeln!(
+        out,
+        "Fallacy identified: {} of {labelled} records with a fallacy label.",
+        fallacy.map(|m| (m * labelled as f64).round() as usize).unwrap_or(0),
+    );
+
     let satisfied = scores.iter().filter(|s| matches!(s.ending, Some(Ending::Satisfied { .. }))).count();
     let limit = scores.iter().filter(|s| matches!(s.ending, Some(Ending::LimitReached))).count();
     let failed = scores.iter().filter(|s| s.error.is_some()).count();
