@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod analyze;
 pub mod check;
 pub mod config;
