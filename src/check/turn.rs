@@ -134,6 +134,9 @@ pub fn check_adversary_turn(
         }
     }
     for response in &turn.responses {
+        if !used_ids.contains(&response.critique) {
+            errors.push(format!("the response to {} names no earlier critique", response.critique));
+        }
         if response.action == ResponseAction::Maintain && response.reasons.trim().is_empty() {
             errors.push(format!("the response maintaining {} gives no reasons", response.critique));
         }
