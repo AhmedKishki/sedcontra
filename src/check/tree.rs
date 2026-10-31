@@ -116,7 +116,7 @@ fn check_places(
             for p in claim_spans.get(premise).into_iter().flatten() {
                 if let Some(c) = conclusion.iter().find(|c| p.start < c.end && c.start < p.end) {
                     errors.push(format!(
-                        "inference {}: premise {premise} and conclusion {} quote the same words \"{}\"; quote the words that state each",
+                        "inference {}: premise {premise} and conclusion {} quote the same words \"{}\"; give each claim a place that quotes only the part of the sentence that states it",
                         inference.id,
                         inference.conclusion,
                         normalise(&proposal[p.start.max(c.start)..p.end.min(c.end)])
