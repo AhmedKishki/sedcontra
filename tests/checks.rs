@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use sedcontra::check::{QuoteIndex, check_adversary_turn, check_advocate_turn, check_tree};
+use sedcontra::check::{QuoteIndex, check_adversary_turn, check_advocate_turn, check_revision, check_tree};
 use sedcontra::config::CheckConfig;
-use sedcontra::model::{AdversaryTurn, AdvocateTurn, CheckedTree, Claim, Critique, Inference, Origin, Tree};
+use sedcontra::model::{AdversaryTurn, AdvocateTurn, Answer, CheckedTree, Claim, Critique, Inference, Origin, Tree};
 
 fn no_lists() -> CheckConfig {
     lists(&[], &[])
@@ -422,4 +422,159 @@ fn all_failures_reported_in_one_pass() {
     assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
     assert!(errs.iter().any(|e| e.contains("the connective \"thus\"")), "{errs:?}");
     assert!(errs.iter().any(|e| e.contains("\"may\"")), "{errs:?}");
+}
+
+fn added(id: &str, critique: &str) -> Claim {
+    let mut c = claim(id, &[]);
+    c.origin = Some(Origin { round: 2, critique: critique.into() });
+    c
+}
+
+fn answer(critique: &str, kind: &str) -> Answer {
+    serde_json::from_str(&format!(r#"{{"critique": "{critique}", "kind": "{kind}", "reasons": "r"}}"#)).unwrap()
+}
+
+/// C1 and C2 support C3 through I1, and C4 supports C1 through I2.
+fn before(extra: Vec<Claim>, i1: &[&str]) -> Tree {
+    let mut claims = vec![claim("C1", &["A holds"]), claim("C2", &["B holds"]), claim("C3", &["C holds"]), claim("C4", &["Q holds"])];
+    claims.extend(extra);
+    tree(claims, vec![inf("I1", i1, "C3"), inf("I2", &["C4"], "C1")], &["C3"])
+}
+
+fn revision_errors(previous: &Tree, revised: &Tree, answered: &[(&Critique, &Answer)]) -> Vec<String> {
+    check_revision(previous, revised, 2, answered)
+}
+
+fn superfluous(id: &str, premise: &str) -> Critique {
+    critique(&format!(r#"{{"id": "{id}", "kind": "superfluous", "inference": "I1", "premise": "{premise}", "point": "p", "support": "s"}}"#))
+}
+
+#[test]
+fn collateral_premise_removal_is_refused() {
+    let previous = before(vec![added("C9", "K0")], &["C1", "C2", "C9"]);
+    let mut revised = previous.clone();
+    revised.inferences[0].premises = vec!["C9".into()];
+    let (k1, accept) = (superfluous("K1", "C1"), answer("K1", "accept"));
+    let errs = revision_errors(&previous, &revised, &[(&k1, &accept)]);
+    assert!(errs.iter().any(|e| e.contains("C2 left I1")), "{errs:?}");
+    assert!(!errs.iter().any(|e| e.contains("C1 left I1")), "{errs:?}");
+}
+
+#[test]
+fn superfluous_removal_of_named_premise_passes() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences[0].premises = vec!["C1".into()];
+    let (k1, accept) = (superfluous("K1", "C2"), answer("K1", "accept"));
+    assert_eq!(revision_errors(&previous, &revised, &[(&k1, &accept)]), Vec::<String>::new());
+}
+
+#[test]
+fn inference_removal_needs_a_critique_that_touches_it() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences.clear();
+    let (k1, adapt) = (critique(GAP_K1), answer("K1", "adapt"));
+    let errs = revision_errors(&previous, &revised, &[(&k1, &adapt)]);
+    assert!(errs.iter().any(|e| e.contains("inference I2 leaves the tree without a critique that touches it")), "{errs:?}");
+    assert!(!errs.iter().any(|e| e.contains("inference I1 leaves")), "{errs:?}");
+}
+
+#[test]
+fn inference_removal_in_answer_to_its_gap_passes() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences.remove(0);
+    let (k1, adapt) = (critique(GAP_K1), answer("K1", "adapt"));
+    assert_eq!(revision_errors(&previous, &revised, &[(&k1, &adapt)]), Vec::<String>::new());
+}
+
+#[test]
+fn conceded_inference_must_stay() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences.remove(0);
+    let (k1, concede) = (critique(GAP_K1), answer("K1", "concede"));
+    let errs = revision_errors(&previous, &revised, &[(&k1, &concede)]);
+    assert!(errs.iter().any(|e| e.contains("was conceded in this turn")), "{errs:?}");
+}
+
+#[test]
+fn stated_claim_deletion_needs_a_reading_critique() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences.remove(1);
+    revised.claims.retain(|c| c.id != "C4");
+    let k1 = critique(r#"{"id": "K1", "kind": "gap", "inference": "I2", "point": "p", "support": "s"}"#);
+    let adapt = answer("K1", "adapt");
+    let errs = revision_errors(&previous, &revised, &[(&k1, &adapt)]);
+    assert!(errs.iter().any(|e| e.contains("claim C4 leaves the tree, but the proposal states it")), "{errs:?}");
+}
+
+#[test]
+fn reported_flag_change_needs_a_reading_critique() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences[0].reported = true;
+    let (k1, adapt) = (critique(GAP_K1), answer("K1", "adapt"));
+    let errs = revision_errors(&previous, &revised, &[(&k1, &adapt)]);
+    assert!(errs.iter().any(|e| e.contains("I1 changed its reported flag without a reading critique")), "{errs:?}");
+}
+
+#[test]
+fn new_inference_needs_an_origin() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = previous.clone();
+    revised.inferences.push(inf("I3", &["C2"], "C4"));
+    let (k1, adapt) = (critique(GAP_K1), answer("K1", "adapt"));
+    let errs = revision_errors(&previous, &revised, &[(&k1, &adapt)]);
+    assert!(errs.iter().any(|e| e.contains("inference I3 is new, so it needs an origin")), "{errs:?}");
+}
+
+#[test]
+fn patch_in_an_untouched_inference_is_refused() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let mut revised = before(vec![added("C9", "K1")], &["C1", "C2"]);
+    revised.inferences[1].premises.push("C9".into());
+    let (k1, accept) = (critique(GAP_K1), answer("K1", "accept"));
+    let errs = revision_errors(&previous, &revised, &[(&k1, &accept)]);
+    assert!(errs.iter().any(|e| e.contains("claim C9 is not a premise of an inference its origin critique touches")), "{errs:?}");
+}
+
+#[test]
+fn accepted_gap_must_add_a_premise() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let (k1, accept) = (critique(GAP_K1), answer("K1", "accept"));
+    let errs = revision_errors(&previous, &previous.clone(), &[(&k1, &accept)]);
+    assert!(errs.iter().any(|e| e.contains("accepting a gap gives I1 an added premise")), "{errs:?}");
+}
+
+#[test]
+fn accepted_superfluous_must_remove_the_premise() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let (k1, accept) = (superfluous("K1", "C2"), answer("K1", "accept"));
+    let errs = revision_errors(&previous, &previous.clone(), &[(&k1, &accept)]);
+    assert!(errs.iter().any(|e| e.contains("removes C2 from I1")), "{errs:?}");
+}
+
+#[test]
+fn conceded_circular_removes_the_added_premise() {
+    let previous = before(vec![added("C9", "K0")], &["C1", "C9"]);
+    let k1 = critique(r#"{"id": "K1", "kind": "circular", "inference": "I1", "premise": "C9", "point": "p", "support": "s"}"#);
+    let concede = answer("K1", "concede");
+    let errs = revision_errors(&previous, &previous.clone(), &[(&k1, &concede)]);
+    assert!(errs.iter().any(|e| e.contains("conceding a circular critique of C9, which you added, removes it from I1")), "{errs:?}");
+
+    let mut revised = previous.clone();
+    revised.inferences[0].premises = vec!["C1".into()];
+    assert_eq!(revision_errors(&previous, &revised, &[(&k1, &concede)]), Vec::<String>::new());
+}
+
+#[test]
+fn two_critiques_on_one_inference_in_one_turn() {
+    let previous = before(vec![], &["C1", "C2"]);
+    let revised = before(vec![added("C9", "K1")], &["C1", "C9"]);
+    let (k1, k2) = (critique(GAP_K1), superfluous("K2", "C2"));
+    let (accept1, accept2) = (answer("K1", "accept"), answer("K2", "accept"));
+    assert_eq!(revision_errors(&previous, &revised, &[(&k1, &accept1), (&k2, &accept2)]), Vec::<String>::new());
 }

@@ -62,7 +62,7 @@ The advocate's first turn turns the proposal into a tree.
 5. It flags an inference as reported when the proposal does not draw it in its own voice, so that the debate tests the proposal's own argument.
 6. It stays faithful to the caller. The first tree records the connections the proposal draws, including weak ones, and adds nothing the proposal did not say. Repair happens only in the debate, where every change traces back to a counter-proposal.
 
-The orchestrator then checks the tree in code, as set out under [The checks](#the-checks), and puts every revised tree the advocate submits during the debate through the same checks. A claim the advocate adds during the debate has no place; it records instead the round and the counter-proposal that added it.
+The orchestrator then checks the tree in code, as set out under [The checks](#the-checks), and puts every revised tree the advocate submits during the debate through the same checks. A claim the advocate adds during the debate has no place; it records instead the round and the counter-proposal that added it, and so does an inference first recorded during the debate.
 
 ### Explanatory-critique
 
@@ -111,11 +111,25 @@ Every tree the advocate submits passes these checks:
 - a stated claim's text contains every word from the configured list of negation, modal and quantifier words that its places contain;
 - every inference has at least one stated premise.
 
+The orchestrator compares each revised tree with the previous one, so that every change traces back to a critique answered in the same turn. A critique *touches* an inference when it targets the inference, when it is a reading critique on the inference or on one of its claims, or when the inference is new and names the critique as its origin.
+
+- An inference leaves the tree, or changes its conclusion, only when an accepted or adapted critique touches it, and never in the turn it is conceded.
+- A stated premise leaves an inference that stays in the tree only through a superfluous critique that names it or a reading critique on the premise or the inference, accepted or adapted in the turn.
+- An added premise leaves an inference only when a critique accepted, adapted or conceded in the turn touches the inference.
+- A stated claim leaves the tree only through an accepted or adapted reading critique on it, so a pruned premise stays in the tree, where the stub finding reports it.
+- An inference's reported flag changes only through an accepted or adapted reading critique on it.
+- Every newly added claim and every new inference names as its origin the current round and a critique answered in that turn, and a newly added claim is a premise of an inference that its origin critique touches.
+
 The advocate's answers pass these checks:
 
 - the advocate answers every critique that the adversary raised or maintained in its last turn, once, and no other;
 - every answer gives reasons, every rejection names its ground, and every quote occurs in the proposal word for word;
 - only a gap or circular critique can be conceded, and a circular critique can be accepted only against an added premise;
+- accepting a gap critique gives the inference an added premise whose origin is that critique;
+- accepting a superfluous or circular critique removes the named premise from the inference;
+- accepting a reading critique changes the claim or inference it targets, or an inference that the claim belongs to;
+- adapting a critique changes its target, an inference it touches, or a claim of such an inference;
+- conceding keeps the inference in the tree and removes an added premise that a conceded circular critique names;
 - rejecting a gap critique on the stated or follows ground names stated claims that the revised tree carries as premises of the inference, and every quote of a stated rejection lies within a place of a named claim.
 
 Every adversary turn passes these checks:
@@ -242,7 +256,7 @@ The first tree states what the text says, so a low share of implicit premises th
 - The async runtime is tokio, which `rmcp` is built on.
 - The MCP server runs over stdio.
 - Testing. The build is not test-driven, and code that compiles counts as done. Tests cover only the areas where compiling code can still produce a wrong report without any visible error, and they use a scripted model with no network. Those areas are:
-  - the checks, especially loop detection and the word-for-word quote check;
+  - the checks, especially loop detection, the word-for-word quote check and the comparison of a revised tree with the previous one;
   - the analyzers, on hand-built trees;
   - the ending of the debate: the early stop at the first satisfied adversary turn, the split into open and unanswered critiques, and the status each critique ends with;
   - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.

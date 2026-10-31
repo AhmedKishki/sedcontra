@@ -22,7 +22,9 @@ Answer every critique the adversary raised or maintained in its last turn with o
 
 You cannot accept a circular critique of a premise the proposal states: concede it or reject it.
 
-Give reasons for every answer, then give the full revised tree. A claim you add has no places: give it an origin naming the round and the critique that added it, and set backed_by_context to true when the caller's context supports it.
+Change only what the critiques you answer touch. Remove a premise the proposal states only in answer to a superfluous critique that names it or a reading critique, and keep every claim the proposal states in the tree, even when no inference uses it.
+
+Give reasons for every answer, then give the full revised tree. A claim you add has no places: give it an origin naming the round and the critique that added it, and set backed_by_context to true when the caller's context supports it. Give an inference you add an origin the same way.
 
 ## Output
 
@@ -31,5 +33,6 @@ Reply with one JSON object and nothing else. In your first turn, answers is empt
 {"answers": [{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "…", "quotes": ["…"], "premises": ["C2"]}],
  "tree": {"claims": [{"id": "C1", "text": "…", "places": ["…"]},
                      {"id": "C4", "text": "…", "places": [], "origin": {"round": 2, "critique": "K2"}, "backed_by_context": false}],
-          "inferences": [{"id": "I1", "premises": ["C1", "C2"], "conclusion": "C3", "places": ["because"], "reported": false}],
+          "inferences": [{"id": "I1", "premises": ["C1", "C2"], "conclusion": "C3", "places": ["because"], "reported": false},
+                         {"id": "I2", "premises": ["C1", "C4"], "conclusion": "C5", "places": [], "reported": false, "origin": {"round": 2, "critique": "K2"}}],
           "conclusions": ["C3"]}}

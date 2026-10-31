@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::compare::check_revision;
 use super::quotes::{QuoteIndex, missing_quote_message};
 use super::tree::check_tree;
 use crate::config::CheckConfig;
@@ -69,6 +70,11 @@ pub fn check_advocate_turn(
         if let Some(critique) = expected.get(&answer.critique) {
             check_answer_kind(&owner, answer, critique, previous, &mut errors);
         }
+    }
+    if let Some(previous) = previous {
+        let answered: Vec<(&Critique, &Answer)> =
+            turn.answers.iter().filter_map(|a| expected.get(&a.critique).map(|c| (c, a))).collect();
+        errors.extend(check_revision(&previous.tree, &turn.tree, round, &answered));
     }
 
     match check_tree(index, rules, turn.tree.clone()) {
