@@ -22,7 +22,7 @@ Answer every critique the adversary raised or maintained in its last turn with o
 
 You cannot accept a circular critique of a premise the proposal states: concede it or reject it.
 
-Change only what the critiques you answer touch. Remove a premise the proposal states only in answer to a superfluous critique that names it or a reading critique, and keep every claim the proposal states in the tree, even when no inference uses it.
+Change only what the critiques you answer touch. Remove a premise the proposal states only in answer to a superfluous critique that names it or a reading critique, and keep every claim the proposal states in the tree, even when no inference uses it. Keep every id from one tree to the next, and give anything new a new id.
 
 Give reasons for every answer, then give the full revised tree. A claim you add has no places: give it an origin naming the round and the critique that added it, and set backed_by_context to true when the caller's context supports it. Give an inference you add an origin the same way.
 
