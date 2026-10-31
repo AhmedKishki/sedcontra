@@ -7,12 +7,14 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::actor::AgentHandle;
-use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn, circular_candidates, unsupported_conclusions};
+use crate::check::{
+    QuoteIndex, check_adversary_turn, check_advocate_turn, circular_candidates, diff_trees, touches, unsupported_conclusions,
+};
 use crate::config::CheckConfig;
 use crate::model::{
     AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, ClaimId, Critique, CritiqueId,
-    CritiqueStatus, DebateOutcome, Ending, Ground, InferenceId, LedgerRow, OpenCritique, ResponseAction, Target, Tree,
-    Turn,
+    CritiqueStatus, DebateOutcome, Effect, Ending, Ground, InferenceId, LedgerRow, OpenCritique, ResponseAction,
+    Target, Tree, Turn,
 };
 
 /// A gap critique dropped after a rejection on stated or follows: its inference and the claims
@@ -281,22 +283,42 @@ fn outcome(turns: Vec<Turn>, final_tree: CheckedTree, ending: Ending, rounds_run
         .map(|c| (c.id.as_str(), c))
         .collect();
 
-    let changes = turns
+    let ledger = build_ledger(&turns);
+    let dropped: BTreeSet<&str> = ledger
         .iter()
-        .filter_map(|t| match t {
-            Turn::Advocate { round, turn } => Some(turn.answers.iter().map(move |a| (*round, a))),
-            _ => None,
-        })
-        .flatten()
-        .filter(|(_, a)| matches!(a.kind, AnswerKind::Accept | AnswerKind::Adapt))
-        .filter_map(|(round, answer)| {
-            critiques.get(answer.critique.as_str()).map(|c| Change {
-                round,
-                critique: (*c).clone(),
-                answer: answer.clone(),
-            })
-        })
+        .filter(|r| r.status == CritiqueStatus::DroppedAfterRejection)
+        .map(|r| r.critique.id.as_str())
         .collect();
+    let (mut changes, mut conceded, mut closed) = (Vec::new(), Vec::new(), Vec::new());
+    let mut previous: Option<&Tree> = None;
+    for (round, turn) in turns.iter().filter_map(|t| match t {
+        Turn::Advocate { round, turn } => Some((*round, turn)),
+        _ => None,
+    }) {
+        let answered: Vec<(&Critique, &Answer)> =
+            turn.answers.iter().filter_map(|a| critiques.get(a.critique.as_str()).map(|c| (*c, a))).collect();
+        let mut effects = match previous {
+            Some(before) => attribute(before, &turn.tree, &answered),
+            None => vec![Vec::new(); answered.len()],
+        };
+        for ((critique, answer), effects) in answered.iter().zip(effects.drain(..)) {
+            let change = Change { round, critique: (*critique).clone(), answer: (*answer).clone(), effects };
+            match answer.kind {
+                AnswerKind::Accept | AnswerKind::Adapt => changes.push(change),
+                AnswerKind::Concede => conceded.push(change),
+                AnswerKind::Reject => {
+                    let closes = matches!(answer.ground, Some(Ground::Stated | Ground::Follows))
+                        && matches!(critique.target, Target::Gap { .. })
+                        && dropped.contains(critique.id.as_str());
+                    if closes {
+                        closed.retain(|c: &Change| c.critique.id != critique.id);
+                        closed.push(change);
+                    }
+                }
+            }
+        }
+        previous = Some(&turn.tree);
+    }
 
     let (open, unanswered) = match (&ending, turns.last(), last_advocate_answers(&turns)) {
         (Ending::LimitReached, Some(Turn::Adversary { turn, .. }), answers) => {
@@ -315,8 +337,54 @@ fn outcome(turns: Vec<Turn>, final_tree: CheckedTree, ending: Ending, rounds_run
         _ => (Vec::new(), Vec::new()),
     };
 
-    let ledger = build_ledger(&turns);
-    DebateOutcome { turns, final_tree, ending, rounds_run, round_limit, ledger, changes, open, unanswered }
+    DebateOutcome { turns, final_tree, ending, rounds_run, round_limit, ledger, changes, conceded, closed, open, unanswered }
+}
+
+/// Gives each change between two advocate trees to the one answer of the turn that caused it, so
+/// the report can say what every answer did.
+fn attribute(previous: &Tree, revised: &Tree, answered: &[(&Critique, &Answer)]) -> Vec<Vec<Effect>> {
+    let diff = diff_trees(previous, revised);
+    let mut effects: Vec<Vec<Effect>> = vec![Vec::new(); answered.len()];
+    let first = |fits: &dyn Fn(&Critique) -> bool| {
+        answered.iter().position(|(c, a)| a.kind != AnswerKind::Reject && fits(c))
+    };
+    let reads = |c: &Critique, id: &str| matches!(&c.target, Target::Reading { of } if of == id);
+    let origin_of = |origin: Option<&crate::model::Origin>| {
+        origin.and_then(|o| first(&|c: &Critique| c.id == o.critique))
+    };
+
+    for id in &diff.added_claims {
+        if let Some(i) = origin_of(revised.claims.iter().find(|c| &c.id == id).and_then(|c| c.origin.as_ref())) {
+            effects[i].push(Effect::AddedClaim { claim: id.clone() });
+        }
+    }
+    for id in &diff.added_inferences {
+        if let Some(i) = origin_of(revised.inferences.iter().find(|inf| &inf.id == id).and_then(|inf| inf.origin.as_ref())) {
+            effects[i].push(Effect::AddedInference { inference: id.clone() });
+        }
+    }
+    for (inference, premise) in &diff.removed_premises {
+        let named = |c: &Critique| c.target.inference() == Some(inference.as_str()) && c.target.premise() == Some(premise.as_str());
+        let cause = first(&named)
+            .or_else(|| first(&|c: &Critique| reads(c, premise) || reads(c, inference)))
+            .or_else(|| first(&|c: &Critique| touches(c, inference, previous, revised)));
+        if let Some(i) = cause {
+            effects[i].push(Effect::RemovedPremise { inference: inference.clone(), premise: premise.clone() });
+        }
+    }
+    for removed in &diff.removed_inferences {
+        let cause = answered.iter().position(|(c, a)| {
+            matches!(a.kind, AnswerKind::Accept | AnswerKind::Adapt) && touches(c, &removed.id, previous, revised)
+        });
+        if let Some(i) = cause {
+            effects[i].push(Effect::RemovedInference {
+                inference: removed.id.clone(),
+                premises: removed.premises.clone(),
+                conclusion: removed.conclusion.clone(),
+            });
+        }
+    }
+    effects
 }
 
 fn last_advocate_answers(turns: &[Turn]) -> Vec<Answer> {

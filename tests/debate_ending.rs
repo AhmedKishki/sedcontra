@@ -4,7 +4,7 @@ use sedcontra::actor::spawn_agent;
 use sedcontra::agents::AgentDef;
 use sedcontra::config::{CheckConfig, ModelSettings};
 use sedcontra::debate::{DebateInput, run_debate};
-use sedcontra::model::{CritiqueStatus, DebateOutcome, Ending};
+use sedcontra::model::{CritiqueStatus, DebateOutcome, Effect, Ending};
 use sedcontra::provider::{ModelProvider, ScriptedProvider};
 use tokio_util::sync::CancellationToken;
 
@@ -115,6 +115,7 @@ async fn limit_splits_open_and_unanswered() {
     assert_eq!(ids(&out.open, |o| &o.critique.id), vec!["K1"]);
     assert_eq!(ids(&out.unanswered, |c| &c.id), vec!["K3"]);
     assert_eq!(ids(&out.changes, |c| &c.critique.id), vec!["K2"]);
+    assert_eq!(out.changes[0].effects, vec![Effect::AddedClaim { claim: "C9".into() }]);
     assert_eq!(status(&out, "K1"), CritiqueStatus::Open);
     assert_eq!(status(&out, "K2"), CritiqueStatus::Accepted);
     assert_eq!(status(&out, "K3"), CritiqueStatus::Unanswered);
@@ -206,4 +207,48 @@ async fn gap_on_conceded_inference_is_refused_and_retried() {
     let out = debate(&p, 3).await;
     assert_eq!(out.ending, Ending::Satisfied { round: 2 });
     assert_eq!(p.calls(), vec!["advocate", "adversary", "advocate", "adversary", "adversary"]);
+}
+
+#[tokio::test]
+async fn conceded_and_closed_lists() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", format!(r#"{{"critiques": [{}, {}], "satisfied": false}}"#, gap("K1"), gap("K2")));
+    p.push(
+        "advocate",
+        format!(
+            r#"{{"answers": [{CONCEDE_K1},
+                {{"critique": "K2", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"], "premises": ["C1"]}}],
+              "tree": {TREE}}}"#
+        ),
+    );
+    p.push("adversary", r#"{"responses": [{"critique": "K2", "action": "drop"}], "satisfied": true}"#);
+    let out = debate(&p, 3).await;
+    assert_eq!(ids(&out.conceded, |c| &c.critique.id), vec!["K1"]);
+    assert_eq!(ids(&out.closed, |c| &c.critique.id), vec!["K2"]);
+}
+
+#[tokio::test]
+async fn two_critiques_on_one_inference_split_their_effects() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    let superfluous = r#"{"id": "K2", "kind": "superfluous", "inference": "I1", "premise": "C2", "point": "C2 is idle", "support": "C follows from A"}"#;
+    p.push("adversary", format!(r#"{{"critiques": [{}, {superfluous}], "satisfied": false}}"#, gap("K1")));
+    p.push(
+        "advocate",
+        r#"{"answers": [{"critique": "K1", "kind": "accept", "reasons": "added C9"},
+                        {"critique": "K2", "kind": "accept", "reasons": "removed C2"}],
+            "tree": {"claims": [
+                {"id": "C1", "text": "A", "places": ["A is true"]},
+                {"id": "C2", "text": "B", "places": ["B is true"]},
+                {"id": "C9", "text": "hidden", "places": [], "origin": {"round": 2, "critique": "K1"}},
+                {"id": "C3", "text": "C", "places": ["C is true"]}],
+              "inferences": [{"id": "I1", "premises": ["C1", "C9"], "conclusion": "C3", "places": ["So"]}],
+              "conclusions": ["C3"]}}"#,
+    );
+    p.push("adversary", r#"{"satisfied": true}"#);
+    let out = debate(&p, 3).await;
+    let effects = |id: &str| out.changes.iter().find(|c| c.critique.id == id).map(|c| c.effects.clone()).unwrap_or_default();
+    assert_eq!(effects("K1"), vec![Effect::AddedClaim { claim: "C9".into() }]);
+    assert_eq!(effects("K2"), vec![Effect::RemovedPremise { inference: "I1".into(), premise: "C2".into() }]);
 }

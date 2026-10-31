@@ -4,11 +4,16 @@ use std::fmt::Write;
 
 use super::{Report, render_argdown};
 use crate::analyze::Finding;
-use crate::model::{AdversaryTurn, AdvocateTurn, Answer, Critique, CritiqueStatus, Ending, Tree, Turn};
+use crate::check::unsupported_conclusions;
+use crate::model::{
+    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Critique, CritiqueStatus, Effect, Ending, Ground, LedgerRow, Target,
+    Tree, Turn,
+};
 
 pub fn render_markdown(report: &Report) -> String {
     let mut out = String::new();
     let tree = &report.final_tree.tree;
+    let conceded = report.conceded_by_inference();
 
     let _ = writeln!(out, "# Cross-examination report\n");
     let _ = writeln!(out, "Run `{}`, record in `{}`.\n", report.run_id, report.record_dir.display());
@@ -26,7 +31,14 @@ pub fn render_markdown(report: &Report) -> String {
             report.unanswered.len()
         ),
     };
-    let _ = writeln!(out, "{ending}\n\nThis describes how the debate ended. It is not a verdict on the proposal.\n");
+    let unsupported = unsupported_conclusions(tree).len();
+    let counts = format!(
+        "{unsupported} of {} {} no supporting inference, and {} conceded to fail.",
+        tree.conclusions.len(),
+        if unsupported == 1 { "conclusions has" } else { "conclusions have" },
+        if conceded.len() == 1 { "1 inference was".to_string() } else { format!("{} inferences were", conceded.len()) }
+    );
+    let _ = writeln!(out, "{ending} {counts}\n\nThis describes how the debate ended. It is not a verdict on the proposal.\n");
 
     let _ = writeln!(out, "## Critique ledger\n");
     if report.ledger.is_empty() {
@@ -41,13 +53,13 @@ pub fn render_markdown(report: &Report) -> String {
                 row.critique.target.kind(),
                 row.critique.target.describe(),
                 row.raised_in,
-                status_label(row.status)
+                ledger_status(row, &report.transcript)
             );
         }
         out.push('\n');
     }
 
-    let _ = writeln!(out, "## Final tree\n\n```argdown\n{}```\n", render_argdown(tree));
+    let _ = writeln!(out, "## Final tree\n\n```argdown\n{}```\n", render_argdown(tree, &conceded));
     let _ = writeln!(out, "### Places\n");
     for claim in &tree.claims {
         let source = match &claim.origin {
@@ -67,13 +79,86 @@ pub fn render_markdown(report: &Report) -> String {
             None if inference.places.is_empty() => "no connective in the text".into(),
             None => quotes(&inference.places),
         };
+        let mark = match conceded.get(&inference.id) {
+            Some(by) => format!("; conceded ({})", by.join(", ")),
+            None if inference.reported => "; reported".into(),
+            None => String::new(),
+        };
         let _ = writeln!(
             out,
-            "- **{}** {} → {}: {}",
+            "- **{}** {} → {}: {}{}",
             inference.id,
             inference.premises.join(", "),
             inference.conclusion,
-            source
+            source,
+            mark
+        );
+    }
+    out.push('\n');
+
+    let _ = writeln!(out, "## Added claims\n");
+    let added: Vec<_> = tree.claims.iter().filter_map(|c| c.origin.as_ref().map(|o| (c, o))).collect();
+    if added.is_empty() {
+        let _ = writeln!(out, "None.");
+    }
+    for (claim, origin) in added {
+        let completes: Vec<&str> =
+            tree.inferences.iter().filter(|i| i.premises.contains(&claim.id)).map(|i| i.id.as_str()).collect();
+        let _ = writeln!(
+            out,
+            "- **{}** {}: completes {}, exposed by {} in round {}",
+            claim.id,
+            one_line(&claim.text),
+            if completes.is_empty() { "no inference".to_string() } else { completes.join(", ") },
+            origin.critique,
+            origin.round
+        );
+    }
+    out.push('\n');
+
+    let _ = writeln!(out, "## Stated premises that close a gap\n");
+    if report.closed.is_empty() {
+        let _ = writeln!(out, "None.");
+    }
+    for change in &report.closed {
+        let closing: Vec<String> = change
+            .answer
+            .premises
+            .iter()
+            .map(|id| match tree.claims.iter().find(|c| &c.id == id) {
+                Some(claim) => format!("{id} {}", quotes(&claim.places)),
+                None => id.clone(),
+            })
+            .collect();
+        let _ = writeln!(
+            out,
+            "- **{}** ({}): closed by {}. Counter-case: {}",
+            change.critique.id,
+            target_phrase(&change.critique),
+            closing.join("; "),
+            one_line(&change.critique.support)
+        );
+    }
+    out.push('\n');
+
+    let _ = writeln!(out, "## Conceded inferences\n");
+    if report.conceded.is_empty() {
+        let _ = writeln!(out, "None.");
+    }
+    for change in &report.conceded {
+        let Some(id) = change.critique.target.inference() else { continue };
+        let shape = tree
+            .inferences
+            .iter()
+            .find(|i| i.id == id)
+            .map(|i| format!(" ({} → {})", i.premises.join(", "), i.conclusion))
+            .unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "- **{id}**{shape} fails: {} {} Support: {}",
+            change.critique.id,
+            sentence(&change.critique.point),
+            one_line(&change.critique.support)
         );
     }
     out.push('\n');
@@ -92,7 +177,7 @@ pub fn render_markdown(report: &Report) -> String {
             change.round,
             sentence(&change.critique.point),
             sentence(&change.answer.reasons),
-            change_effects(&change.critique, tree)
+            effects_phrase(&change.effects, tree)
         );
     }
     if !report.changes.is_empty() {
@@ -242,40 +327,63 @@ fn render_adversary(out: &mut String, turn: &AdversaryTurn) {
     let _ = writeln!(out, "- Satisfied: {}", if turn.satisfied { "yes" } else { "no" });
 }
 
-/// What a change left in the final tree: the claims and inferences it added, and a premise it removed.
-fn change_effects(critique: &Critique, tree: &Tree) -> String {
-    let from_critique = |origin: &Option<crate::model::Origin>| origin.as_ref().is_some_and(|o| o.critique == critique.id);
-    let mut effects: Vec<String> = tree
-        .claims
+/// What a change did to the tree, with the text of each claim it added.
+fn effects_phrase(effects: &[Effect], tree: &Tree) -> String {
+    let text = |id: &str| tree.claims.iter().find(|c| c.id == id).map(|c| format!(" ({})", one_line(&c.text))).unwrap_or_default();
+    let parts: Vec<String> = effects
         .iter()
-        .filter(|c| from_critique(&c.origin))
-        .map(|c| format!("added {} ({})", c.id, one_line(&c.text)))
-        .chain(tree.inferences.iter().filter(|i| from_critique(&i.origin)).map(|i| {
-            format!("added {} ({} → {})", i.id, i.premises.join(", "), i.conclusion)
-        }))
+        .map(|effect| match effect {
+            Effect::AddedClaim { claim } => format!("added {claim}{}", text(claim)),
+            Effect::AddedInference { inference } => format!("added {inference}"),
+            Effect::RemovedPremise { inference, premise } => format!("removed {premise} from {inference}"),
+            Effect::RemovedInference { inference, premises, conclusion } => {
+                format!("removed {inference} ({} → {conclusion})", premises.join(", "))
+            }
+        })
         .collect();
-    if let crate::model::Target::Superfluous { inference, premise } = &critique.target {
-        let removed = tree.inferences.iter().find(|i| &i.id == inference).is_some_and(|i| !i.premises.contains(premise));
-        if removed {
-            effects.push(format!("removed {premise} from {inference}"));
-        }
-    }
-    if effects.is_empty() { String::new() } else { format!(" Effect: {}.", effects.join("; ")) }
+    if parts.is_empty() { String::new() } else { format!(" Effect: {}.", parts.join("; ")) }
 }
 
-fn status_label(status: CritiqueStatus) -> &'static str {
-    match status {
-        CritiqueStatus::Accepted => "accepted",
-        CritiqueStatus::Adapted => "adapted",
-        CritiqueStatus::Conceded => "conceded",
-        CritiqueStatus::DroppedAfterRejection => "dropped after rejection",
-        CritiqueStatus::Open => "open",
-        CritiqueStatus::Unanswered => "unanswered",
+/// A critique's final status, named by what an acceptance did and by the ground a dropped
+/// critique was rejected on.
+fn ledger_status(row: &LedgerRow, transcript: &[Turn]) -> String {
+    match (row.status, &row.critique.target) {
+        (CritiqueStatus::Accepted, Target::Gap { .. }) => "premise added".into(),
+        (CritiqueStatus::Accepted, Target::Superfluous { .. }) => "premise removed".into(),
+        (CritiqueStatus::Accepted, Target::Circular { .. }) => "patch removed".into(),
+        (CritiqueStatus::Accepted, Target::Reading { .. }) => "reading corrected".into(),
+        (CritiqueStatus::Adapted, _) => "adapted".into(),
+        (CritiqueStatus::Conceded, _) => "conceded".into(),
+        (CritiqueStatus::DroppedAfterRejection, _) => {
+            let ground = transcript
+                .iter()
+                .filter_map(|t| match t {
+                    Turn::Advocate { turn, .. } => Some(turn.answers.iter()),
+                    _ => None,
+                })
+                .flatten()
+                .filter(|a| a.critique == row.critique.id && a.kind == AnswerKind::Reject)
+                .filter_map(|a| a.ground)
+                .next_back();
+            match ground {
+                Some(ground) => format!("dropped after rejection: {}", ground_name(ground)),
+                None => "dropped after rejection".into(),
+            }
+        }
+        (CritiqueStatus::Open, _) => "open".into(),
+        (CritiqueStatus::Unanswered, _) => "unanswered".into(),
+    }
+}
+
+fn ground_name(ground: Ground) -> &'static str {
+    match ground {
+        Ground::Stated => "stated",
+        Ground::Follows => "follows",
+        Ground::CounterFails => "counter_fails",
     }
 }
 
 fn kind_label(answer: &Answer) -> String {
-    use crate::model::{AnswerKind, Ground};
     match (answer.kind, answer.ground) {
         (AnswerKind::Accept, _) => "accepted".into(),
         (AnswerKind::Adapt, _) => "adapted".into(),

@@ -159,10 +159,13 @@ The connectives, the qualifier words, the share and the stopwords live in the co
 | Field | Content |
 | --- | --- |
 | Run | the run id and the location of its record |
-| Ending | the adversary satisfied in round r of N, or the round limit reached with open or unanswered critiques. It describes how the debate ended and is never a verdict. |
-| Critique ledger | one row per critique: its kind, its target, the round that raised it and its final status, which is accepted, adapted, conceded, dropped after rejection, open or unanswered |
-| Final tree | claims, inferences and conclusions, each marked with its places in the proposal or with the round and counter-proposal that added it |
-| Changes | every accepted or adapted counter-proposal and what it changed. An added claim is a premise the proposal needed and did not state; a removed premise is one it did not need. |
+| Ending | the adversary satisfied in round r of N, or the round limit reached with open or unanswered critiques, followed by the number of unsupported conclusions and of conceded inferences. It describes how the debate ended and is never a verdict. |
+| Critique ledger | one row per critique: its kind, its target, the round that raised it and its final status, which is premise added, premise removed, patch removed, reading corrected, adapted, conceded, dropped after rejection with the ground, open or unanswered |
+| Final tree | claims, inferences and conclusions, each marked with its places in the proposal or with the round and counter-proposal that added it, and each reported or conceded inference marked as such |
+| Added claims | every premise the proposal needs and does not state, with the inference it completes and the critique that exposed it |
+| Stated premises that close a gap | every claim a rejection on the stated or follows ground put into an inference, beside the counter-case that showed the conclusion depends on it |
+| Conceded inferences | every refuted inference, with the critique the advocate conceded |
+| Changes | every accepted or adapted counter-proposal and what it changed, which code computes by comparing the tree before and after the answer: the claims and inferences it added and the premises and inferences it removed. An added claim is a premise the proposal needed and did not state; a removed premise is one it did not need. |
 | Open critiques | when the limit was reached: the critiques the adversary maintained against the advocate's rejection, each with both sides' arguments |
 | Unanswered critiques | when the limit was reached: the critiques new in the adversary's last turn, listed apart because the advocate had no turn to examine them |
 | Structural findings | see below |
@@ -288,6 +291,7 @@ These count as failure even if everything else works:
 - An objection that does not meet explanatory-critique changes the tree or stands at the end.
 - An unanswered critique reads as one that survived the advocate's answer.
 - A counter-proposal goes unanswered, or a rejection stands without reasons.
+- A conclusion loses its support, or an inference is refuted, without the report saying so.
 - A patch restates the conclusion it supports, or replaces the premises the proposal states.
 - The report reads as a verdict on the proposal.
 

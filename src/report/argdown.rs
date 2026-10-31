@@ -1,10 +1,10 @@
 //! The final tree as Argdown premise–conclusion structures.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::{Claim, Tree};
+use crate::model::{Claim, CritiqueId, InferenceId, Tree};
 
-pub fn render_argdown(tree: &Tree) -> String {
+pub fn render_argdown(tree: &Tree, conceded: &BTreeMap<InferenceId, Vec<CritiqueId>>) -> String {
     let conclusions: BTreeSet<&str> = tree.conclusions.iter().map(String::as_str).collect();
     let statement = |id: &str| -> String {
         match tree.claims.iter().find(|c| c.id == id) {
@@ -15,7 +15,14 @@ pub fn render_argdown(tree: &Tree) -> String {
 
     let mut blocks = Vec::new();
     for inference in &tree.inferences {
-        let mut lines = vec![format!("<{}>", inference.id)];
+        let title = match conceded.get(&inference.id) {
+            Some(by) => format!("<{}>: Conceded to fail ({}). #conceded", inference.id, by.join(", ")),
+            None if inference.reported => {
+                format!("<{}>: Reported, not drawn in the proposal's own voice. #reported", inference.id)
+            }
+            None => format!("<{}>", inference.id),
+        };
+        let mut lines = vec![title, String::new()];
         for (n, premise) in inference.premises.iter().enumerate() {
             lines.push(format!("({}) {}", n + 1, statement(premise)));
         }

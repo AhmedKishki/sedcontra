@@ -135,7 +135,7 @@ pub async fn cross_examine(
             let report = build_report(&record, outcome, findings);
             let markdown = render_markdown(&report);
             let json = serde_json::to_value(&report).unwrap_or_default();
-            let argdown = render_argdown(&report.final_tree.tree);
+            let argdown = render_argdown(&report.final_tree.tree, &report.conceded_by_inference());
             if let Err(e) = record.write_report(&markdown, &json, &argdown).and_then(|_| record.set_status("done")) {
                 eprintln!("warning: could not write the report into {}: {e:#}", record.dir.display());
             }

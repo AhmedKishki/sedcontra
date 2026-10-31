@@ -251,11 +251,23 @@ pub struct LedgerRow {
     pub status: CritiqueStatus,
 }
 
+/// What an answer changed in the tree, as the comparison of the trees before and after it shows.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "effect", rename_all = "snake_case")]
+pub enum Effect {
+    AddedClaim { claim: ClaimId },
+    AddedInference { inference: InferenceId },
+    RemovedPremise { inference: InferenceId, premise: ClaimId },
+    RemovedInference { inference: InferenceId, premises: Vec<ClaimId>, conclusion: ClaimId },
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Change {
     pub round: u32,
     pub critique: Critique,
     pub answer: Answer,
+    #[serde(default)]
+    pub effects: Vec<Effect>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -274,6 +286,10 @@ pub struct DebateOutcome {
     pub round_limit: u32,
     pub ledger: Vec<LedgerRow>,
     pub changes: Vec<Change>,
+    /// The concessions: each refutes an inference as the proposal draws it.
+    pub conceded: Vec<Change>,
+    /// The last rejection on stated or follows of each gap critique dropped after it.
+    pub closed: Vec<Change>,
     pub open: Vec<OpenCritique>,
     pub unanswered: Vec<Critique>,
 }
