@@ -26,10 +26,16 @@ pub fn check_advocate_turn(
             errors.push("the first turn has no critiques to answer, so answers must be empty".into());
         }
         for claim in turn.tree.claims.iter().filter(|c| c.origin.is_some()) {
-            errors.push(format!("claim {} has an origin, but the first tree adds nothing", claim.id));
+            errors.push(format!(
+                "claim {} has an origin, but the first tree adds nothing; give it the place where the proposal states it and no origin, or leave it out if the proposal does not state it",
+                claim.id
+            ));
         }
         for inference in turn.tree.inferences.iter().filter(|i| i.origin.is_some()) {
-            errors.push(format!("inference {} has an origin, but the first tree adds nothing", inference.id));
+            errors.push(format!(
+                "inference {} has an origin, but the first tree adds nothing; drop the origin, since every inference of the first tree is one the proposal draws",
+                inference.id
+            ));
         }
     } else {
         let mut seen: BTreeMap<&str, usize> = BTreeMap::new();

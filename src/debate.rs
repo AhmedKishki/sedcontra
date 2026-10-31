@@ -209,7 +209,7 @@ fn proposal_section(input: &DebateInput) -> String {
 
 fn first_advocate_message(input: &DebateInput) -> String {
     format!(
-        "{}\n\n## What the checks require\n\nEach place quotes at most one sentence and may quote only part of one: when one sentence states both a premise and its conclusion, give each its own part, since a premise and its conclusion may not quote the same words. These words are connectives, and each occurrence must lie within the place of an inference: {}. These words are qualifiers, and a claim keeps every one its places contain: {}.\n\nBuild the tree.",
+        "{}\n\n## What the checks require\n\nThe first tree carries no origins: every claim and inference in it, including one you add after a failed check, is something the proposal says. Each place quotes at most one sentence and may quote only part of one: when one sentence states both a premise and its conclusion, give each its own part, since a premise and its conclusion may not quote the same words. These words are connectives, and each occurrence must lie within the place of an inference: {}. These words are qualifiers, and a claim keeps every one its places contain: {}.\n\nBuild the tree.",
         proposal_section(input),
         input.checks.connectives.join(", "),
         input.checks.qualifiers.join(", ")
