@@ -41,3 +41,9 @@ api_key_env = "DEEPSEEK_API_KEY"  # CI fallback, read only when no key file exis
 [analyzers]
 stub_max_len = 2
 uncovered_min_words = 4
+
+# Word lists for the checks in SPEC.md, "The checks"; matching ignores case and takes whole words,
+# so both lists follow the language of the proposal.
+[checks]
+connectives = ["because", "therefore", "hence", "thus", "consequently"]
+qualifiers = ["not", "no", "never", "none", "nothing", "cannot", "can't", "don't", "doesn't", "isn't", "aren't", "won't", "may", "might", "can", "could", "must", "should", "seem", "seems", "appear", "appears", "suggest", "suggests", "perhaps", "probably", "possibly", "likely", "all", "every", "some", "most", "many", "few", "only", "always", "often", "usually", "generally"]

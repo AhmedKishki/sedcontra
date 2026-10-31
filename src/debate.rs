@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::actor::AgentHandle;
 use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn};
+use crate::config::CheckConfig;
 use crate::model::{
     AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, Critique, CritiqueId,
     CritiqueStatus, DebateOutcome, Ending, InferenceId, LedgerRow, OpenCritique, ResponseAction, Turn,
@@ -17,6 +18,7 @@ pub struct DebateInput {
     pub proposal: String,
     pub context: Option<String>,
     pub round_limit: u32,
+    pub checks: CheckConfig,
 }
 
 pub struct TurnEvent {
@@ -78,7 +80,7 @@ pub async fn run_debate(
         let previous = final_tree.as_ref();
         let ((advocate_turn, checked), raw) = take_turn(advocate, "advocate", message, cancel, &turns, |value| {
             let turn: AdvocateTurn = shaped(value)?;
-            check_advocate_turn(&index, turn, round, &expected, previous)
+            check_advocate_turn(&index, &input.checks, turn, round, &expected, previous)
         })
         .await?;
         for answer in advocate_turn.answers.iter().filter(|a| a.kind == AnswerKind::Concede) {
@@ -135,7 +137,12 @@ fn proposal_section(input: &DebateInput) -> String {
 }
 
 fn first_advocate_message(input: &DebateInput) -> String {
-    format!("{}\n\nBuild the tree.", proposal_section(input))
+    format!(
+        "{}\n\n## What the checks require\n\nEach place quotes at most one sentence. These words are connectives, and each occurrence must lie within the place of an inference: {}. These words are qualifiers, and a claim keeps every one its places contain: {}.\n\nBuild the tree.",
+        proposal_section(input),
+        input.checks.connectives.join(", "),
+        input.checks.qualifiers.join(", ")
+    )
 }
 
 /// The critiques the advocate must answer: those the adversary raised or maintained in its last turn.

@@ -1,6 +1,14 @@
 use sedcontra::analyze::{Analyzer, Finding, Restatement, Stubs, Uncovered};
 use sedcontra::check::{QuoteIndex, check_tree};
+use sedcontra::config::CheckConfig;
 use sedcontra::model::{CheckedTree, Claim, Inference, Tree};
+
+fn no_lists() -> CheckConfig {
+    let mut rules = CheckConfig::bundled();
+    rules.connectives.clear();
+    rules.qualifiers.clear();
+    rules
+}
 
 fn claim(id: &str, places: &[&str]) -> Claim {
     Claim {
@@ -25,7 +33,7 @@ fn inf(id: &str, premises: &[&str], conclusion: &str, places: &[&str]) -> Infere
 
 fn checked(proposal: &str, claims: Vec<Claim>, inferences: Vec<Inference>, conclusions: &[&str]) -> CheckedTree {
     let tree = Tree { claims, inferences, conclusions: conclusions.iter().map(|c| c.to_string()).collect() };
-    check_tree(&QuoteIndex::new(proposal), tree).expect("test tree must pass the checks")
+    check_tree(&QuoteIndex::new(proposal), &no_lists(), tree).expect("test tree must pass the checks")
 }
 
 fn stubs(findings: Vec<Finding>) -> Vec<(Vec<String>, bool)> {

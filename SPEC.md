@@ -30,6 +30,7 @@ The structure the advocate builds is a directed graph without cycles. This spec 
 | Reported inference | An inference the proposal sets out without drawing it in its own voice: it attributes the inference to someone else or sets it out in order to reject it. |
 | Conceded inference | An inference the advocate concedes to fail as the proposal draws it, in answer to a gap or circular critique. |
 | Place | An exact quote from the proposal that states a claim or an inference. |
+| Connective | A word from a configured list, such as "because" or "thus", that marks an inference in the proposal. |
 | Root | A claim that no inference concludes: a premise the argument starts from. |
 | Leaf | A claim that no inference uses as a premise. |
 | Conclusion | A claim the advocate marks as what the proposal argues for. |
@@ -54,10 +55,10 @@ Two trees may start at different roots X and Y and meet at a shared claim Q. No 
 
 The advocate's first turn turns the proposal into a tree.
 
-1. The advocate reads every paragraph, sentence and phrase and identifies the substantive claims. Wording that carries no claim and no connection yields nothing.
+1. The advocate reads every paragraph, sentence and phrase and identifies the substantive claims. Wording that carries no claim and no connection yields nothing. Each claim states one assertion and keeps the proposal's negation, modal and quantifier words, so that a paraphrase cannot drop a "not", a "may" or a "some".
 2. It identifies the inferences between claims and records them in logical order, whatever order the text uses: "X because Y" becomes `Y → X`. The tree is therefore in logical order by construction, and nothing judges the order of the text itself.
 3. It marks the conclusion or conclusions the proposal argues for.
-4. It records every place that states each claim. For each inference it records the place that states the connection, such as the "because", when the text states one.
+4. It records every place that states each claim, and each place quotes at most one sentence. For each inference it records the place that states the connection, such as the "because", when the text states one. Every connective in the proposal is the place of some inference, since a connective marks an inference the proposal draws.
 5. It flags an inference as reported when the proposal does not draw it in its own voice, so that the debate tests the proposal's own argument.
 6. It stays faithful to the caller. The first tree records the connections the proposal draws, including weak ones, and adds nothing the proposal did not say. Repair happens only in the debate, where every change traces back to a counter-proposal.
 
@@ -103,7 +104,12 @@ Every tree the advocate submits passes these checks:
 - every inference refers to existing claims and has at least one premise, and at least one conclusion is marked;
 - no path loops back on itself;
 - every place occurs in the proposal word for word, with whitespace normalised, and the orchestrator records where;
-- every claim has a place, or an origin as an added claim, and the first tree has no added claims and no origins.
+- every claim has a place, or an origin as an added claim, and the first tree has no added claims and no origins;
+- a claim's place quotes at most one sentence: it crosses no sentence end, paragraph break or start of a list item, where a sentence end is a ".", "!" or "?" followed by whitespace and a capital letter;
+- every occurrence of a connective in the proposal lies within the place of an inference;
+- no premise's place overlaps a place of its inference's conclusion;
+- a stated claim's text contains every word from the configured list of negation, modal and quantifier words that its places contain;
+- every inference has at least one stated premise.
 
 The advocate's answers pass these checks:
 
@@ -122,6 +128,8 @@ Every adversary turn passes these checks:
 - the adversary declares itself satisfied exactly when its turn raises and maintains nothing.
 
 A turn that fails a check gets the list of failures and one retry, and a second failure fails the run. Each failure names what broke the check and what would satisfy it, so the fix on retry is mechanical.
+
+The connectives and the qualifier words live in the configuration, so they can follow the language of the proposal.
 
 ### What the report contains
 
@@ -193,7 +201,7 @@ Every other part sits behind one interface, so it can be replaced, and new parts
 | Front ends | MCP server, command line |
 | Report renderers | markdown, JSON, Argdown |
 
-Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns each agent its model in its own `[models.<agent>]` table. The advocate and the adversary both default to `deepseek-flash`, and either can run on a different model or provider without touching the other. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the stub threshold, the uncovered-text minimum and the runs directory.
+Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns each agent its model in its own `[models.<agent>]` table. The advocate and the adversary both default to `deepseek-flash`, and either can run on a different model or provider without touching the other. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the lists and thresholds that the checks and analyzers use, and the runs directory.
 
 ### Model access
 
@@ -257,6 +265,7 @@ These count as failure even if everything else works:
 - An objection that does not meet explanatory-critique changes the tree or stands at the end.
 - An unanswered critique reads as one that survived the advocate's answer.
 - A counter-proposal goes unanswered, or a rejection stands without reasons.
+- A patch restates the conclusion it supports, or replaces the premises the proposal states.
 - The report reads as a verdict on the proposal.
 
 ## Left to the builder

@@ -4,10 +4,10 @@ You are the advocate in a cross-examination of a proposal written by another age
 
 ## Your first turn: build the tree
 
-1. Read every paragraph, sentence and phrase of the proposal and identify its substantive claims. Wording that makes no claim and draws no connection yields nothing.
+1. Read every paragraph, sentence and phrase of the proposal and identify its substantive claims. Wording that makes no claim and draws no connection yields nothing. Each claim states one assertion.
 2. Identify the inferences between the claims and record them in logical order, whatever order the text uses: "X because Y" is the inference from Y to X. An inference has one or more premises and exactly one conclusion.
 3. Mark the claim or claims the proposal argues for as its conclusions.
-4. Give every place where the proposal states each claim, as an exact quote. A claim stated twice has two places. For each inference, quote the words that state the connection, such as "because" or "so", when the text has them.
+4. Give every place where the proposal states each claim, as an exact quote. A claim stated twice has two places. For each inference, quote the words that state the connection, such as "because" or "so", when the text has them. Meet what the checks require, which the orchestrator lists in its first message.
 5. Flag an inference as reported when the proposal does not draw it in its own voice: it attributes the inference to someone else or sets it out in order to reject it.
 6. Stay faithful to the proposal. Record the connections it draws, including weak ones, and add nothing it does not say. Repair happens only in answer to the adversary.
 

@@ -1,4 +1,4 @@
-//! The configuration: models, providers, round limit, analyzer thresholds and the runs directory.
+//! The configuration: models, providers, round limit, check word lists, analyzer thresholds and the runs directory.
 //!
 //! The built-in defaults live in `config/default.toml`, not in code; a user file overrides them
 //! table by table. No agent and no line of code names a provider: each agent's model comes from
@@ -21,6 +21,7 @@ pub struct Config {
     pub models: BTreeMap<String, ModelSettings>,
     pub providers: BTreeMap<String, ProviderConfig>,
     pub analyzers: AnalyzerConfig,
+    pub checks: CheckConfig,
 }
 
 /// The model an agent runs on: its `[models.<agent>]` table.
@@ -49,6 +50,21 @@ pub struct ProviderConfig {
 pub struct AnalyzerConfig {
     pub stub_max_len: usize,
     pub uncovered_min_words: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CheckConfig {
+    pub connectives: Vec<String>,
+    pub qualifiers: Vec<String>,
+}
+
+impl CheckConfig {
+    /// The `[checks]` table of the built-in defaults.
+    pub fn bundled() -> CheckConfig {
+        let table: toml::Table = DEFAULTS.parse().expect("the bundled defaults parse");
+        let checks = table.get("checks").cloned().expect("the bundled defaults define [checks]");
+        checks.try_into().expect("the bundled [checks] table has the fields of CheckConfig")
+    }
 }
 
 /// The highest round limit allowed, so a mistyped setting cannot run a debate without end.

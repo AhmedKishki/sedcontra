@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::quotes::{QuoteIndex, missing_quote_message};
 use super::tree::check_tree;
+use crate::config::CheckConfig;
 use crate::model::{
     AdversaryTurn, AdvocateTurn, Answer, AnswerKind, CheckedTree, Claim, Critique, CritiqueId, Ground, InferenceId,
     ResponseAction, Target, Tree,
@@ -11,6 +12,7 @@ use crate::model::{
 
 pub fn check_advocate_turn(
     index: &QuoteIndex,
+    rules: &CheckConfig,
     turn: AdvocateTurn,
     round: u32,
     expected: &BTreeMap<CritiqueId, Critique>,
@@ -69,7 +71,7 @@ pub fn check_advocate_turn(
         }
     }
 
-    match check_tree(index, turn.tree.clone()) {
+    match check_tree(index, rules, turn.tree.clone()) {
         Ok(checked) => {
             for answer in &turn.answers {
                 if let Some(critique) = expected.get(&answer.critique) {

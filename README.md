@@ -61,7 +61,7 @@ A run has five steps:
 1. **Reconstruction.** The first tree has claims as its nodes and inferences `P, Q → Z` as its edges, and every claim carries the exact quotes that state it. The advocate records the proposal as written, weak links included, so every later change can be traced to a critique.
 2. **Checks.** Code rejects a turn when:
 
-   - its tree has a loop, a reference to an unknown claim, or no marked conclusion;
+   - its tree has a loop, a reference to an unknown claim or no marked conclusion, or breaks another rule in [SPEC.md](SPEC.md#the-checks);
    - it quotes text that isn't in the proposal word for word;
    - a critique or an answer in it is missing a required part;
    - it leaves a critique unanswered.

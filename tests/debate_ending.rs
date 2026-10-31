@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use sedcontra::actor::spawn_agent;
 use sedcontra::agents::AgentDef;
-use sedcontra::config::ModelSettings;
+use sedcontra::config::{CheckConfig, ModelSettings};
 use sedcontra::debate::{DebateInput, run_debate};
 use sedcontra::model::{CritiqueStatus, DebateOutcome, Ending};
 use sedcontra::provider::{ModelProvider, ScriptedProvider};
@@ -42,7 +42,7 @@ async fn debate(provider: &Arc<ScriptedProvider>, round_limit: u32) -> DebateOut
     let dynamic: Arc<dyn ModelProvider> = provider.clone();
     let advocate = spawn_agent(def("advocate"), dynamic.clone());
     let adversary = spawn_agent(def("adversary"), dynamic);
-    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit };
+    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit, checks: CheckConfig::bundled() };
     run_debate(&input, &advocate, &adversary, None, &CancellationToken::new())
         .await
         .unwrap_or_else(|e| panic!("debate failed: {}", e.reason))
@@ -129,7 +129,7 @@ async fn cancelled_before_start_calls_no_model() {
         let dynamic: Arc<dyn ModelProvider> = p.clone();
         let advocate = spawn_agent(def("advocate"), dynamic.clone());
         let adversary = spawn_agent(def("adversary"), dynamic);
-        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2 };
+        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2, checks: CheckConfig::bundled() };
         let cancel = CancellationToken::new();
         cancel.cancel();
         let err = run_debate(&input, &advocate, &adversary, None, &cancel).await.expect_err("cancelled");

@@ -116,7 +116,12 @@ pub async fn cross_examine(
         }
     });
 
-    let input = DebateInput { proposal: proposal.clone(), context, round_limit: env.config.round_limit() };
+    let input = DebateInput {
+        proposal: proposal.clone(),
+        context,
+        round_limit: env.config.round_limit(),
+        checks: env.config.checks.clone(),
+    };
     let result = run_debate(&input, &advocate, &adversary, Some(&tx), &cancel).await;
     drop(tx);
     let _ = forwarder.await;
