@@ -40,6 +40,33 @@ pub fn render_markdown(report: &Report) -> String {
     );
     let _ = writeln!(out, "{ending} {counts}\n\nThis describes how the debate ended. It is not a verdict on the proposal.\n");
 
+    let _ = writeln!(out, "## Conclusions\n");
+    for support in &report.conclusions {
+        let text = tree.claims.iter().find(|c| c.id == support.conclusion).map(|c| one_line(&c.text)).unwrap_or_default();
+        if !support.supported {
+            let _ = writeln!(out, "- **{}** {text}: no inference supports it.", support.conclusion);
+            continue;
+        }
+        let parts: Vec<String> = [
+            ("rests on added", &support.added),
+            ("passes through conceded", &support.conceded),
+            ("open", &support.open),
+            ("unanswered", &support.unanswered),
+        ]
+        .into_iter()
+        .filter(|(_, ids)| !ids.is_empty())
+        .map(|(label, ids)| format!("{label} {}", ids.join(", ")))
+        .collect();
+        let rests = if parts.is_empty() { String::new() } else { format!(" {}.", parts.join("; ")) };
+        let _ = writeln!(
+            out,
+            "- **{}** {text}:{rests} Some line of support avoids every conceded inference: {}.",
+            support.conclusion,
+            if support.intact { "yes" } else { "no" }
+        );
+    }
+    out.push('\n');
+
     let _ = writeln!(out, "## Critique ledger\n");
     if report.ledger.is_empty() {
         let _ = writeln!(out, "None.\n");
@@ -273,6 +300,43 @@ fn render_findings(out: &mut String, findings: &[Finding], tree: &Tree) {
         let label = if prune { "Prune suggestion" } else { "Separate line of argument" };
         let listed: Vec<String> = claims.iter().map(|id| format!("{id} ({})", text_of(id))).collect();
         let _ = writeln!(out, "- {label}: {}", listed.join("; "));
+    }
+    out.push('\n');
+
+    let _ = writeln!(out, "### Unsupported conclusions\n");
+    let unsupported: Vec<_> = findings
+        .iter()
+        .filter_map(|f| match f {
+            Finding::Unsupported { claim } => Some(claim),
+            _ => None,
+        })
+        .collect();
+    if unsupported.is_empty() {
+        let _ = writeln!(out, "None.");
+    }
+    for id in unsupported {
+        let places = tree.claims.iter().find(|c| &c.id == id).map(|c| quotes(&c.places)).unwrap_or_default();
+        let _ = writeln!(out, "- **{id}** {}: {places}", text_of(id));
+    }
+    out.push('\n');
+
+    let _ = writeln!(out, "### Circular candidates\n");
+    let circular: Vec<_> = findings
+        .iter()
+        .filter_map(|f| match f {
+            Finding::Circular { inference, premise, conclusion, share } => Some((inference, premise, conclusion, share)),
+            _ => None,
+        })
+        .collect();
+    if circular.is_empty() {
+        let _ = writeln!(out, "None.");
+    }
+    for (inference, premise, conclusion, share) in circular {
+        let _ = writeln!(
+            out,
+            "- **{premise}** in {inference} holds {:.0}% of the content words of {conclusion}",
+            share * 100.0
+        );
     }
     out.push('\n');
 }

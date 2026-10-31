@@ -160,6 +160,7 @@ The connectives, the qualifier words, the share and the stopwords live in the co
 | --- | --- |
 | Run | the run id and the location of its record |
 | Ending | the adversary satisfied in round r of N, or the round limit reached with open or unanswered critiques, followed by the number of unsupported conclusions and of conceded inferences. It describes how the debate ended and is never a verdict. |
+| Conclusions | for each conclusion: the added claims its support rests on, the conceded inferences and the open or unanswered critiques its support passes through, and whether some line of support avoids every conceded inference |
 | Critique ledger | one row per critique: its kind, its target, the round that raised it and its final status, which is premise added, premise removed, patch removed, reading corrected, adapted, conceded, dropped after rejection with the ground, open or unanswered |
 | Final tree | claims, inferences and conclusions, each marked with its places in the proposal or with the round and counter-proposal that added it, and each reported or conceded inference marked as such |
 | Added claims | every premise the proposal needs and does not state, with the inference it completes and the critique that exposed it |
@@ -171,6 +172,8 @@ The connectives, the qualifier words, the share and the stopwords live in the co
 | Structural findings | see below |
 | Transcript | every turn, headed by round and role |
 
+A line of support for a conclusion is a set of inferences, none of them reported, that derives the conclusion from claims no such inference concludes. Code computes the Conclusions field from the final tree and the ledger, so the caller sees which conclusions a critique or a concession reaches without tracing the tree itself.
+
 The report comes in three renderings of the same data: markdown for an agent or a person to read, JSON for a program, and Argdown for the final tree. Argdown is an established syntax for premise–conclusion structures, so the tree also opens as an argument map in Argdown's tools, and the markdown report shows its final tree in the same syntax.
 
 ### Structural findings
@@ -180,6 +183,8 @@ Each finding is computed in code by an analyzer that reads the final tree and th
 - **Restatement.** The report quotes every place of the claim and suggests keeping one. A conclusion announced before its argument shows up here, because the advocate records the announcement and the final statement as one claim.
 - **Uncovered text.** The report quotes each stretch of the proposal that no place covers as a candidate for cutting. Stretches shorter than a configured minimum, 4 words by default, are ignored.
 - **Stub.** The report lists each stub with its claims and places. A stub no longer than a configured threshold, 2 claims by default, is marked as a prune suggestion; a longer one is reported as a separate line of argument.
+- **Unsupported conclusion.** The report lists each unsupported conclusion with its places. The proposal asserts it without an argument the tree records, either from the start or because the debate removed the inference that concluded it.
+- **Circular candidate.** The report lists each circular candidate in the final tree with its share of the conclusion's content words, as a premise to check for restating its conclusion.
 
 ### Front ends
 
@@ -223,7 +228,7 @@ Every other part sits behind one interface, so it can be replaced, and new parts
 | Model provider | a client for OpenAI-format chat APIs, configured for DeepSeek |
 | Agent prompts | one Markdown file each for the advocate and the adversary, holding only the prompt |
 | Critique standard | explanatory-critique, in its own file that both prompts include |
-| Analyzers | restatement, uncovered text, stub |
+| Analyzers | restatement, uncovered text, stub, unsupported conclusion, circular candidate |
 | Front ends | MCP server, command line |
 | Report renderers | markdown, JSON, Argdown |
 
@@ -269,7 +274,7 @@ The first tree states what the text says, so a low share of implicit premises th
 - The MCP server runs over stdio.
 - Testing. The build is not test-driven, and code that compiles counts as done. Tests cover only the areas where compiling code can still produce a wrong report without any visible error, and they use a scripted model with no network. Those areas are:
   - the checks, especially loop detection, the word-for-word quote check and the comparison of a revised tree with the previous one;
-  - the analyzers, on hand-built trees;
+  - the analyzers and the support of each conclusion, on hand-built trees;
   - the ending of the debate: the early stop at the first satisfied adversary turn, the split into open and unanswered critiques, and the status each critique ends with;
   - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
 

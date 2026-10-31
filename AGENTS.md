@@ -29,7 +29,7 @@
 - Do not use test-driven development, even when a skill prescribes it. Code that compiles counts as done.
 - Write tests only where compiling code can still produce a wrong report without a visible error:
   - the checks, especially loop detection, the word-for-word quote check and the comparison of a revised tree with the previous one;
-  - the analyzers, on hand-built trees;
+  - the analyzers and the support of each conclusion, on hand-built trees;
   - the ending of the debate: the early stop at the first satisfied adversary turn, the split into open and unanswered critiques, and the status each critique ends with;
   - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
 - Put each area's tests in one file under `tests/`. A test that needs a model drives it with `ScriptedProvider`, never the network or a real key.

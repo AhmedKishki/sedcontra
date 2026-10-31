@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::analyze::Finding;
+use crate::analyze::{ConclusionSupport, Finding, conclusion_support};
 use crate::model::{
     Change, CheckedTree, Critique, CritiqueId, DebateOutcome, Ending, InferenceId, LedgerRow, OpenCritique, Turn,
 };
@@ -24,6 +24,7 @@ pub struct Report {
     pub ending: Ending,
     pub rounds_run: u32,
     pub round_limit: u32,
+    pub conclusions: Vec<ConclusionSupport>,
     pub ledger: Vec<LedgerRow>,
     pub final_tree: CheckedTree,
     pub changes: Vec<Change>,
@@ -55,6 +56,7 @@ pub fn build_report(record: &RunRecord, outcome: DebateOutcome, findings: Vec<Fi
         ending: outcome.ending,
         rounds_run: outcome.rounds_run,
         round_limit: outcome.round_limit,
+        conclusions: conclusion_support(&outcome.final_tree.tree, &outcome.ledger),
         ledger: outcome.ledger,
         final_tree: outcome.final_tree,
         changes: outcome.changes,

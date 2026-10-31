@@ -1,7 +1,9 @@
-use sedcontra::analyze::{Analyzer, Finding, Restatement, Stubs, Uncovered};
+use sedcontra::analyze::{
+    Analyzer, Circular, ConclusionSupport, Finding, Restatement, Stubs, Uncovered, Unsupported, conclusion_support,
+};
 use sedcontra::check::{CircularCandidate, QuoteIndex, check_tree, circular_candidates, unsupported_conclusions};
 use sedcontra::config::CheckConfig;
-use sedcontra::model::{CheckedTree, Claim, Inference, Tree};
+use sedcontra::model::{CheckedTree, Claim, CritiqueStatus, Inference, LedgerRow, Origin, Tree};
 
 fn no_lists() -> CheckConfig {
     let mut rules = CheckConfig::bundled();
@@ -191,4 +193,94 @@ fn circular_candidate_ignores_stopwords_and_threshold() {
         &["C3"],
     );
     assert_eq!(circular_candidates(&t, &CheckConfig::bundled()), Vec::<CircularCandidate>::new());
+}
+
+#[test]
+fn unsupported_analyzer_reports_conclusion_without_inference() {
+    let t = checked(LETTERS, vec![claim("X", &["X holds"]), claim("Z", &["Z holds"])], vec![], &["Z"]);
+    assert_eq!(Unsupported.analyze(LETTERS, &t), vec![Finding::Unsupported { claim: "Z".into() }]);
+}
+
+#[test]
+fn circular_analyzer_reports_candidates() {
+    let p = "Prices change hourly. The cache serves fresh prices to every dashboard.";
+    let mut c9 = says("C9", "the cache serves fresh prices to the dashboard");
+    c9.origin = Some(Origin { round: 2, critique: "K1".into() });
+    let t = checked(
+        p,
+        vec![
+            claim("C1", &["Prices change hourly"]),
+            c9,
+            Claim { text: "the cache serves fresh prices to every dashboard".into(), ..claim("C3", &["The cache serves fresh prices to every dashboard"]) },
+        ],
+        vec![inf("I1", &["C1", "C9"], "C3", &[])],
+        &["C3"],
+    );
+    let found = Circular { rules: CheckConfig::bundled() }.analyze(p, &t);
+    assert_eq!(
+        found,
+        vec![Finding::Circular { inference: "I1".into(), premise: "C9".into(), conclusion: "C3".into(), share: 1.0 }]
+    );
+}
+
+fn row(critique: &str, status: CritiqueStatus) -> LedgerRow {
+    LedgerRow { critique: serde_json::from_str(critique).unwrap(), raised_in: 1, status }
+}
+
+fn gap_on(id: &str, inference: &str) -> String {
+    format!(r#"{{"id": "{id}", "kind": "gap", "inference": "{inference}", "point": "p", "support": "s"}}"#)
+}
+
+fn support_of(t: &Tree, ledger: &[LedgerRow]) -> ConclusionSupport {
+    conclusion_support(t, ledger).into_iter().next().expect("one conclusion")
+}
+
+#[test]
+fn support_through_conceded_inference_is_not_intact() {
+    let t = plain(vec![claim("A", &[]), claim("Z", &[])], vec![inf("I1", &["A"], "Z", &[])], &["Z"]);
+    let s = support_of(&t, &[row(&gap_on("K1", "I1"), CritiqueStatus::Conceded)]);
+    assert!(s.supported);
+    assert!(!s.intact);
+    assert_eq!(s.conceded, vec!["I1".to_string()]);
+}
+
+#[test]
+fn alternative_line_keeps_support_intact() {
+    let t = plain(
+        vec![claim("A", &[]), claim("B", &[]), claim("Z", &[])],
+        vec![inf("I1", &["A"], "Z", &[]), inf("I2", &["B"], "Z", &[])],
+        &["Z"],
+    );
+    let s = support_of(&t, &[row(&gap_on("K1", "I1"), CritiqueStatus::Conceded)]);
+    assert!(s.intact);
+    assert_eq!(s.conceded, vec!["I1".to_string()]);
+}
+
+#[test]
+fn reported_inference_is_not_support() {
+    let t = plain(vec![claim("A", &[]), claim("Z", &[])], vec![reported(inf("I1", &["A"], "Z", &[]))], &["Z"]);
+    let s = support_of(&t, &[]);
+    assert!(!s.supported);
+    assert!(!s.intact);
+}
+
+#[test]
+fn support_collects_open_unanswered_and_added() {
+    let mut c9 = claim("C9", &[]);
+    c9.origin = Some(Origin { round: 2, critique: "K0".into() });
+    let t = plain(
+        vec![claim("A", &[]), c9, claim("M", &[]), claim("Z", &[]), claim("Q", &[]), claim("R", &[])],
+        vec![inf("I1", &["A", "C9"], "M", &[]), inf("I2", &["M"], "Z", &[]), inf("I9", &["Q"], "R", &[])],
+        &["Z"],
+    );
+    let ledger = [
+        row(&gap_on("K1", "I1"), CritiqueStatus::Open),
+        row(r#"{"id": "K2", "kind": "reading", "of": "A", "point": "p", "support": "s", "quotes": ["A"]}"#, CritiqueStatus::Unanswered),
+        row(&gap_on("K3", "I9"), CritiqueStatus::Unanswered),
+    ];
+    let s = support_of(&t, &ledger);
+    assert_eq!(s.added, vec!["C9".to_string()]);
+    assert_eq!(s.open, vec!["K1".to_string()]);
+    assert_eq!(s.unanswered, vec!["K2".to_string()]);
+    assert!(s.intact);
 }

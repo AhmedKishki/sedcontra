@@ -68,7 +68,7 @@ A run has five steps:
 
    A rejected turn gets one retry with the failures listed. If the retry fails too, the run fails.
 3. **Debate.** The adversary critiques the tree under the rules above. The advocate accepts, adapts, concedes or rejects each critique and revises the tree for the ones it accepts or adapts. The adversary drops each rejected critique or keeps pressing it, then critiques the revised tree. This goes on until the adversary is satisfied or the round limit is reached.
-4. **Findings.** The analyzers compare the final tree with the proposal. They flag claims the proposal states more than once, stretches of text no quote covers, and stubs: claims that never lead to a conclusion.
+4. **Findings.** The analyzers compare the final tree with the proposal. They flag claims the proposal states more than once, stretches of text no quote covers, stubs (claims that never lead to a conclusion), conclusions no inference supports, and premises that may restate their conclusion.
 5. **Report.** The report says how the debate ended. It holds a ledger of every critique with its final status, the final tree in Argdown, the changes the debate forced, the inferences conceded to fail, the critiques left open or unanswered, the findings and the full transcript.
 
 The full design, including the debate rules and every field of the report, is in [SPEC.md](SPEC.md).

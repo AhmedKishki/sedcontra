@@ -128,7 +128,7 @@ pub async fn cross_examine(
 
     match result {
         Ok(outcome) => {
-            let findings = default_analyzers(&env.config.analyzers)
+            let findings = default_analyzers(&env.config.analyzers, &env.config.checks)
                 .iter()
                 .flat_map(|a| a.analyze(&proposal, &outcome.final_tree))
                 .collect();
