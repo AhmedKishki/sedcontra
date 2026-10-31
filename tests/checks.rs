@@ -373,6 +373,32 @@ fn connective_inside_a_longer_word_is_ignored() {
 }
 
 #[test]
+fn repeated_connective_cited_once_per_inference() {
+    let p = "Streets are wet because rain fell. Crops grew because rain fell.";
+    let t = tree(
+        vec![claim("C1", &["Streets are wet"]), claim("C2", &["rain fell", "rain fell"]), claim("C3", &["Crops grew"])],
+        vec![cites(inf("I1", &["C2"], "C1"), &["because"]), cites(inf("I2", &["C2"], "C3"), &["because"])],
+        &["C1", "C3"],
+    );
+    assert_eq!(errors_with(p, &lists(&["because"], &[]), t), Vec::<String>::new());
+}
+
+#[test]
+fn repeated_conclusion_words_do_not_overlap() {
+    let p = "If it rains, the streets get wet. It rains. Therefore the streets get wet.";
+    let t = tree(
+        vec![
+            claim("C1", &["If it rains, the streets get wet"]),
+            claim("C2", &["It rains"]),
+            claim("C3", &["the streets get wet"]),
+        ],
+        vec![cites(inf("I1", &["C1", "C2"], "C3"), &["Therefore"])],
+        &["C3"],
+    );
+    assert_eq!(errors_with(p, &no_lists(), t), Vec::<String>::new());
+}
+
+#[test]
 fn premise_and_conclusion_sharing_words_fail() {
     let t = tree(
         vec![claim("C1", &["A holds because B holds"]), claim("C2", &["B holds"])],

@@ -44,19 +44,17 @@ pub fn check_tree(index: &QuoteIndex, rules: &CheckConfig, tree: Tree) -> Result
         errors.push(format!("the inferences form a loop: {}", cycle.join(" → ")));
     }
 
-    let mut claim_spans = BTreeMap::new();
     for claim in &tree.claims {
         if claim.places.is_empty() && claim.origin.is_none() {
             errors.push(format!("claim {} has no place and no origin", claim.id));
         }
-        let owner = format!("claim {}", claim.id);
-        claim_spans.insert(claim.id.clone(), locate(index, &owner, &claim.places, &mut errors));
     }
-    let mut inference_spans = BTreeMap::new();
-    for inference in &tree.inferences {
-        let owner = format!("inference {}", inference.id);
-        inference_spans.insert(inference.id.clone(), locate(index, &owner, &inference.places, &mut errors));
-    }
+    let claims: Vec<_> =
+        tree.claims.iter().map(|c| (c.id.as_str(), format!("claim {}", c.id), c.places.as_slice())).collect();
+    let claim_spans = locate_all(index, &claims, &mut errors);
+    let inferences: Vec<_> =
+        tree.inferences.iter().map(|i| (i.id.as_str(), format!("inference {}", i.id), i.places.as_slice())).collect();
+    let inference_spans = locate_all(index, &inferences, &mut errors);
     check_places(index, rules, &tree, &claim_spans, &inference_spans, &mut errors);
     for inference in &tree.inferences {
         let added = |id: &ClaimId| tree.claims.iter().any(|c| &c.id == id && c.is_added());
@@ -105,7 +103,7 @@ fn check_places(
     for word in find_words(proposal, &rules.connectives) {
         if !cited.iter().any(|s| s.start <= word.start && word.end <= s.end) {
             errors.push(format!(
-                "the connective \"{}\" in \"…{}…\" lies in no inference's place; record the inference it marks and quote the connective among that inference's places",
+                "the connective \"{}\" in \"…{}…\" lies in no inference's place; record the inference it marks and quote the connective among that inference's places, with enough of the text around it to tell it from the connective's other occurrences",
                 &proposal[word.start..word.end],
                 context(proposal, word)
             ));
@@ -155,25 +153,43 @@ fn context(text: &str, span: Span) -> String {
     normalise(&text[start..end])
 }
 
-/// Gives each place its own occurrence: a quote listed k times takes the first k occurrences.
-fn locate(index: &QuoteIndex, owner: &str, places: &[String], errors: &mut Vec<String>) -> Vec<Span> {
-    let mut used: BTreeMap<String, usize> = BTreeMap::new();
-    let mut spans = Vec::new();
-    for place in places {
-        let key = normalise(place);
-        let occurrences = index.find_all(place);
-        let nth = used.entry(key).or_insert(0);
-        match occurrences.get(*nth) {
-            Some(span) => spans.push(*span),
-            None if occurrences.is_empty() => errors.push(missing_quote_message(owner, place)),
-            None => errors.push(format!(
-                "{owner}: the quote \"{place}\" occurs {} time(s) in the proposal but is listed more often",
-                occurrences.len()
-            )),
+/// Locates the places of every owner of one kind, claims or inferences. A quote one owner lists
+/// k times takes k distinct occurrences. Each place prefers an occurrence no other owner's place
+/// has taken, and the places with the fewest occurrences are located first, so that a recurring
+/// connective or phrase is found where each owner states it rather than at its first occurrence.
+fn locate_all(index: &QuoteIndex, owners: &[(&str, String, &[String])], errors: &mut Vec<String>) -> BTreeMap<String, Vec<Span>> {
+    let mut pending: Vec<(usize, usize, Vec<Span>)> = Vec::new();
+    for (o, (_, label, places)) in owners.iter().enumerate() {
+        for (j, place) in places.iter().enumerate() {
+            let occurrences = index.find_all(place);
+            if occurrences.is_empty() {
+                errors.push(missing_quote_message(label, place));
+            } else {
+                pending.push((o, j, occurrences));
+            }
         }
-        *nth += 1;
     }
-    spans
+    pending.sort_by_key(|(_, _, occurrences)| occurrences.len());
+
+    let mut chosen: Vec<Vec<Option<Span>>> = owners.iter().map(|(_, _, places)| vec![None; places.len()]).collect();
+    let mut taken: Vec<Span> = Vec::new();
+    for (o, j, occurrences) in pending {
+        let own: Vec<Span> = chosen[o].iter().flatten().copied().collect();
+        let free: Vec<Span> = occurrences.iter().copied().filter(|s| !own.contains(s)).collect();
+        let Some(&first) = free.first() else {
+            let (_, label, places) = &owners[o];
+            errors.push(format!(
+                "{label}: the quote \"{}\" occurs {} time(s) in the proposal but is listed more often",
+                places[j],
+                occurrences.len()
+            ));
+            continue;
+        };
+        let span = free.iter().copied().find(|s| !taken.iter().any(|t| s.start < t.end && t.start < s.end)).unwrap_or(first);
+        taken.push(span);
+        chosen[o][j] = Some(span);
+    }
+    owners.iter().zip(chosen).map(|((id, _, _), spans)| (id.to_string(), spans.into_iter().flatten().collect())).collect()
 }
 
 /// A loop in the edges premise → conclusion, as the path of claim ids that closes it.
