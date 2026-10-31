@@ -2,6 +2,7 @@
 # overrides any value here, table by table.
 
 rounds = 1  # the round limit, 1–10; every MCP call runs under it, and run --rounds overrides it for one run
+retries = 2  # how often a turn the checks refuse is sent back with its failures, 0–5
 
 # The model each agent runs on, and how deeply it reasons. The advocate and the adversary
 # run on the same model, and the advocate reasons at low depth while the adversary reasons at

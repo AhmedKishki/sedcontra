@@ -16,6 +16,7 @@ const FILE_NAME: &str = "sedcontra.toml";
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
     pub rounds: u32,
+    pub retries: u32,
     #[serde(default)]
     pub runs_dir: Option<PathBuf>,
     pub models: BTreeMap<String, ModelSettings>,
@@ -72,6 +73,10 @@ impl CheckConfig {
 /// The highest round limit allowed, so a mistyped setting cannot run a debate without end.
 const MAX_ROUNDS: u32 = 10;
 
+/// The most retries a refused turn gets, so a mistyped setting cannot spend model calls on one
+/// turn without end.
+const MAX_RETRIES: u32 = 5;
+
 impl Config {
     /// The built-in defaults, overridden by the first file found: `path`, `./sedcontra.toml`,
     /// then `config.toml` in the user config directory.
@@ -106,6 +111,14 @@ impl Config {
         let clamped = self.rounds.clamp(1, MAX_ROUNDS);
         if clamped != self.rounds {
             eprintln!("warning: rounds = {} is outside 1–{MAX_ROUNDS}; using {clamped}", self.rounds);
+        }
+        clamped
+    }
+
+    pub fn retry_limit(&self) -> u32 {
+        let clamped = self.retries.min(MAX_RETRIES);
+        if clamped != self.retries {
+            eprintln!("warning: retries = {} is above {MAX_RETRIES}; using {clamped}", self.retries);
         }
         clamped
     }

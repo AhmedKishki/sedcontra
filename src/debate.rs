@@ -25,6 +25,8 @@ pub struct DebateInput {
     pub proposal: String,
     pub context: Option<String>,
     pub round_limit: u32,
+    /// How often a turn the checks refuse is sent back with its failures.
+    pub retries: u32,
     pub checks: CheckConfig,
 }
 
@@ -86,7 +88,7 @@ pub async fn run_debate(
             ),
         };
         let previous = final_tree.as_ref();
-        let ((advocate_turn, checked), raw) = take_turn(advocate, "advocate", message, cancel, &turns, |value| {
+        let ((advocate_turn, checked), raw) = take_turn(advocate, "advocate", message, cancel, &turns, input.retries, |value| {
             let turn: AdvocateTurn = shaped(value)?;
             check_advocate_turn(&index, &input.checks, turn, round, &expected, previous)
         })
@@ -127,7 +129,7 @@ pub async fn run_debate(
         record(Turn::Advocate { round, turn: advocate_turn }, raw, &mut turns);
 
         let tree = &checked;
-        let (adversary_turn, raw) = take_turn(adversary, "adversary", message, cancel, &turns, |value| {
+        let (adversary_turn, raw) = take_turn(adversary, "adversary", message, cancel, &turns, input.retries, |value| {
             let turn: AdversaryTurn = shaped(value)?;
             check_adversary_turn(&index, &turn, tree, &rejected, &used_ids, &conceded)?;
             Ok(turn)
@@ -245,11 +247,12 @@ async fn take_turn<T>(
     message: String,
     cancel: &CancellationToken,
     turns: &[Turn],
+    retries: u32,
     check: impl Fn(Value) -> Result<T, Vec<String>>,
 ) -> Result<(T, String), DebateError> {
     let fail = |reason: String, cancelled: bool| DebateError { reason, cancelled, turns: turns.to_vec() };
     let mut text = message;
-    for attempt in 0..2 {
+    for attempt in 0..=retries {
         // The cancel branch is polled first, so no turn starts once the run is cancelled.
         let reply = tokio::select! {
             biased;
@@ -258,18 +261,23 @@ async fn take_turn<T>(
         };
         match check(reply.value) {
             Ok(value) => return Ok((value, reply.raw)),
-            Err(errors) if attempt == 0 => {
+            Err(errors) if attempt < retries => {
                 text = format!(
                     "Your reply failed these checks:\n{}\n\nReply again with the whole corrected JSON object.",
                     errors.iter().map(|e| format!("- {e}")).collect::<Vec<_>>().join("\n")
                 );
             }
             Err(errors) => {
-                return Err(fail(format!("the {role}'s turn failed the checks twice: {}", errors.join("; ")), false));
+                let times = match retries + 1 {
+                    1 => "once".to_string(),
+                    2 => "twice".to_string(),
+                    n => format!("{n} times"),
+                };
+                return Err(fail(format!("the {role}'s turn failed the checks {times}: {}", errors.join("; ")), false));
             }
         }
     }
-    unreachable!("the loop returns on its second attempt")
+    unreachable!("the loop returns on its last attempt")
 }
 
 fn outcome(turns: Vec<Turn>, final_tree: CheckedTree, ending: Ending, rounds_run: u32, round_limit: u32) -> DebateOutcome {

@@ -120,6 +120,7 @@ pub async fn cross_examine(
         proposal: proposal.clone(),
         context,
         round_limit: env.config.round_limit(),
+        retries: env.config.retry_limit(),
         checks: env.config.checks.clone(),
     };
     let result = run_debate(&input, &advocate, &adversary, Some(&tx), &cancel).await;

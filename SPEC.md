@@ -143,7 +143,7 @@ Every adversary turn passes these checks:
 - the adversary responds to every rejection and to no conceded critique, and gives reasons for every critique it maintains;
 - the adversary declares itself satisfied exactly when its turn raises and maintains nothing.
 
-A turn that fails a check gets the list of failures and one retry, and a second failure fails the run. Each failure names what broke the check and what would satisfy it, so the fix on retry is mechanical.
+A turn that fails a check gets the list of failures and another attempt, up to a configured number of retries, 2 by default and at most 5, and a turn that still fails after its last retry fails the run. Each failure names what broke the check and what would satisfy it, so the fix on retry is mechanical.
 
 Code finds these cases for the adversary to judge:
 
@@ -232,7 +232,7 @@ Every other part sits behind one interface, so it can be replaced, and new parts
 | Front ends | MCP server, command line |
 | Report renderers | markdown, JSON, Argdown |
 
-Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns each agent its model in its own `[models.<agent>]` table. The advocate and the adversary both default to `deepseek-flash`, and either can run on a different model or provider without touching the other. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the lists and thresholds that the checks and analyzers use, and the runs directory.
+Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns each agent its model in its own `[models.<agent>]` table. The advocate and the adversary both default to `deepseek-flash`, and either can run on a different model or provider without touching the other. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the retry count, the lists and thresholds that the checks and analyzers use, and the runs directory.
 
 ### Model access
 

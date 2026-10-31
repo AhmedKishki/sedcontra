@@ -42,7 +42,7 @@ async fn debate(provider: &Arc<ScriptedProvider>, round_limit: u32) -> DebateOut
     let dynamic: Arc<dyn ModelProvider> = provider.clone();
     let advocate = spawn_agent(def("advocate"), dynamic.clone());
     let adversary = spawn_agent(def("adversary"), dynamic);
-    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit, checks: CheckConfig::bundled() };
+    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit, retries: 1, checks: CheckConfig::bundled() };
     run_debate(&input, &advocate, &adversary, None, &CancellationToken::new())
         .await
         .unwrap_or_else(|e| panic!("debate failed: {}", e.reason))
@@ -130,7 +130,7 @@ async fn cancelled_before_start_calls_no_model() {
         let dynamic: Arc<dyn ModelProvider> = p.clone();
         let advocate = spawn_agent(def("advocate"), dynamic.clone());
         let adversary = spawn_agent(def("adversary"), dynamic);
-        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2, checks: CheckConfig::bundled() };
+        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2, retries: 1, checks: CheckConfig::bundled() };
         let cancel = CancellationToken::new();
         cancel.cancel();
         let err = run_debate(&input, &advocate, &adversary, None, &cancel).await.expect_err("cancelled");
@@ -278,4 +278,39 @@ async fn two_critiques_on_one_inference_split_their_effects() {
     let effects = |id: &str| out.changes.iter().find(|c| c.critique.id == id).map(|c| c.effects.clone()).unwrap_or_default();
     assert_eq!(effects("K1"), vec![Effect::AddedClaim { claim: "C9".into() }]);
     assert_eq!(effects("K2"), vec![Effect::RemovedPremise { inference: "I1".into(), premise: "C2".into() }]);
+}
+
+/// The adversary's reply that raises and maintains nothing yet is not satisfied, which the checks refuse.
+const EMPTY_TURN: &str = r#"{"satisfied": false}"#;
+
+async fn debate_with_retries(provider: &Arc<ScriptedProvider>, retries: u32) -> Result<DebateOutcome, String> {
+    let dynamic: Arc<dyn ModelProvider> = provider.clone();
+    let advocate = spawn_agent(def("advocate"), dynamic.clone());
+    let adversary = spawn_agent(def("adversary"), dynamic);
+    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 1, retries, checks: CheckConfig::bundled() };
+    run_debate(&input, &advocate, &adversary, None, &CancellationToken::new()).await.map_err(|e| e.reason)
+}
+
+#[tokio::test]
+async fn second_retry_rescues_a_refused_turn() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", EMPTY_TURN);
+    p.push("adversary", EMPTY_TURN);
+    p.push("adversary", r#"{"satisfied": true}"#);
+    let out = debate_with_retries(&p, 2).await.unwrap_or_else(|reason| panic!("debate failed: {reason}"));
+    assert_eq!(out.ending, Ending::Satisfied { round: 1 });
+    assert_eq!(p.calls(), vec!["advocate", "adversary", "adversary", "adversary"]);
+}
+
+#[tokio::test]
+async fn turn_fails_after_its_last_retry() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", EMPTY_TURN);
+    p.push("adversary", EMPTY_TURN);
+    p.push("adversary", r#"{"satisfied": true}"#);
+    let reason = debate_with_retries(&p, 1).await.expect_err("the adversary's turn fails after one retry");
+    assert!(reason.contains("the adversary's turn failed the checks twice"), "{reason}");
+    assert_eq!(p.calls(), vec!["advocate", "adversary", "adversary"]);
 }
