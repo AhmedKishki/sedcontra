@@ -242,6 +242,17 @@ fn stated_rejection_needs_named_premises_in_the_inference() {
 }
 
 #[test]
+fn rejection_premise_errors_arrive_with_tree_errors() {
+    let claims = r#"{"id": "C1", "text": "A", "places": ["A holds. B holds"]},
+        {"id": "C2", "text": "B", "places": ["B holds"]},
+        {"id": "C3", "text": "C", "places": ["C holds"]}"#;
+    let answer = r#"{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "r", "quotes": ["A holds"], "premises": ["C3"]}"#;
+    let errs = advocate_errors(&round_two(answer, claims, r#"["C1", "C2"]"#), 2, &[critique(GAP_K1)], Some(&base()));
+    assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("C3 is not a premise of I1")), "{errs:?}");
+}
+
+#[test]
 fn stated_rejection_quote_must_lie_in_a_named_place() {
     let answer = r#"{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "r", "quotes": ["B holds"], "premises": ["C1"]}"#;
     let errs = advocate_errors(&round_two(answer, CLAIMS, r#"["C1", "C2"]"#), 2, &[critique(GAP_K1)], Some(&base()));

@@ -7,8 +7,8 @@ use super::quotes::{QuoteIndex, missing_quote_message};
 use super::tree::check_tree;
 use crate::config::CheckConfig;
 use crate::model::{
-    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, CheckedTree, Claim, Critique, CritiqueId, Ground, InferenceId,
-    ResponseAction, Target, Tree,
+    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, CheckedTree, Claim, ClaimId, Critique, CritiqueId, Ground,
+    InferenceId, ResponseAction, Span, Target, Tree,
 };
 
 pub fn check_advocate_turn(
@@ -77,15 +77,16 @@ pub fn check_advocate_turn(
         errors.extend(check_revision(&previous.tree, &turn.tree, round, &answered));
     }
 
-    match check_tree(index, rules, turn.tree.clone()) {
-        Ok(checked) => {
-            for answer in &turn.answers {
-                if let Some(critique) = expected.get(&answer.critique) {
-                    check_rejection_premises(index, answer, critique, &checked, &mut errors);
-                }
-            }
-            if errors.is_empty() { Ok((turn, checked)) } else { Err(errors) }
+    let checked = check_tree(index, rules, turn.tree.clone());
+    let spans = checked.as_ref().ok().map(|c| &c.claim_spans);
+    for answer in &turn.answers {
+        if let Some(critique) = expected.get(&answer.critique) {
+            check_rejection_premises(index, answer, critique, &turn.tree, spans, &mut errors);
         }
+    }
+    match checked {
+        Ok(checked) if errors.is_empty() => Ok((turn, checked)),
+        Ok(_) => Err(errors),
         Err(tree_errors) => {
             errors.extend(tree_errors);
             Err(errors)
@@ -118,23 +119,26 @@ fn check_answer_kind(owner: &str, answer: &Answer, critique: &Critique, previous
 }
 
 /// A rejection on stated or follows claims the proposal supplies the missing premise, so the
-/// claims it names must be stated premises of the inference in the revised tree.
-fn check_rejection_premises(index: &QuoteIndex, answer: &Answer, critique: &Critique, revised: &CheckedTree, errors: &mut Vec<String>) {
+/// claims it names must be stated premises of the inference in the revised tree. The quotes of a
+/// stated rejection are matched against the named claims' places once the tree's places are found.
+fn check_rejection_premises(
+    index: &QuoteIndex,
+    answer: &Answer,
+    critique: &Critique,
+    revised: &Tree,
+    spans: Option<&BTreeMap<ClaimId, Vec<Span>>>,
+    errors: &mut Vec<String>,
+) {
     let (AnswerKind::Reject, Some(ground @ (Ground::Stated | Ground::Follows)), Target::Gap { inference }) =
         (answer.kind, answer.ground, &critique.target)
     else {
         return;
     };
     let owner = format!("answer to {}", answer.critique);
-    let premises: &[String] = revised
-        .tree
-        .inferences
-        .iter()
-        .find(|i| &i.id == inference)
-        .map(|i| i.premises.as_slice())
-        .unwrap_or(&[]);
+    let premises: &[String] =
+        revised.inferences.iter().find(|i| &i.id == inference).map(|i| i.premises.as_slice()).unwrap_or(&[]);
     for id in &answer.premises {
-        match revised.tree.claims.iter().find(|c| &c.id == id) {
+        match revised.claims.iter().find(|c| &c.id == id) {
             None => errors.push(format!("{owner}: {id} is not a claim of the revised tree")),
             Some(claim) if claim.is_added() => errors.push(format!(
                 "{owner}: {id} is not a stated claim; a rejection on {} names claims the proposal states",
@@ -146,8 +150,8 @@ fn check_rejection_premises(index: &QuoteIndex, answer: &Answer, critique: &Crit
             Some(_) => {}
         }
     }
-    if ground == Ground::Stated {
-        let named: Vec<_> = answer.premises.iter().filter_map(|id| revised.claim_spans.get(id)).flatten().collect();
+    if let (Ground::Stated, Some(spans)) = (ground, spans) {
+        let named: Vec<_> = answer.premises.iter().filter_map(|id| spans.get(id)).flatten().collect();
         for quote in answer.quotes.iter().filter(|q| index.contains(q)) {
             let inside = index.find_all(quote).iter().any(|q| named.iter().any(|s| s.start <= q.start && q.end <= s.end));
             if !inside {
