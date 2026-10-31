@@ -89,14 +89,26 @@ fn two_claim_loop_is_rejected() {
         &["C2"],
     );
     let errs = errors_of(ABC, t);
-    assert!(errs.iter().any(|e| e.contains("loop")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("loop: I1 (C1 → C2), I2 (C2 → C1); drop one of them")), "{errs:?}");
 }
 
 #[test]
 fn self_loop_is_rejected() {
     let t = tree(vec![claim("C1", &["A holds"])], vec![inf("I1", &["C1"], "C1")], &["C1"]);
     let errs = errors_of(ABC, t);
-    assert!(errs.iter().any(|e| e.contains("loop")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("loop: I1 (C1 → C1);")), "{errs:?}");
+}
+
+#[test]
+fn every_loop_is_reported_in_one_pass() {
+    let t = tree(
+        vec![claim("C1", &["A holds"]), claim("C2", &["B holds"]), claim("C3", &["C holds"]), claim("C4", &["Q holds"])],
+        vec![inf("I1", &["C1"], "C2"), inf("I2", &["C2"], "C1"), inf("I3", &["C3"], "C4"), inf("I4", &["C4"], "C3")],
+        &["C2"],
+    );
+    let errs = errors_of(ABC, t);
+    assert!(errs.iter().any(|e| e.contains("I1 (C1 → C2), I2 (C2 → C1)")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("I3 (C3 → C4), I4 (C4 → C3)")), "{errs:?}");
 }
 
 #[test]

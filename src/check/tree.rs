@@ -36,8 +36,12 @@ pub fn check_tree(index: &QuoteIndex, tree: Tree) -> Result<CheckedTree, Vec<Str
             errors.push(format!("conclusion {id} is not a claim"));
         }
     }
-    if let Some(cycle) = find_loop(&tree) {
-        errors.push(format!("the inferences form a loop: {}", cycle.join(" → ")));
+    for links in find_loops(&tree) {
+        let named: Vec<String> = links.iter().map(|l| format!("{} ({} → {})", l.inference, l.premise, l.conclusion)).collect();
+        errors.push(format!(
+            "the inferences form a loop: {}; drop one of them, or change its premises or conclusion, so that no claim supports itself",
+            named.join(", ")
+        ));
     }
 
     for claim in &tree.claims {
@@ -128,12 +132,22 @@ fn locate_all(index: &QuoteIndex, owners: &[(&str, String, &[String])], errors: 
     owners.iter().zip(chosen).map(|((id, _, _), spans)| (id.to_string(), spans.into_iter().flatten().collect())).collect()
 }
 
-/// A loop in the edges premise → conclusion, as the path of claim ids that closes it.
-fn find_loop(tree: &Tree) -> Option<Vec<ClaimId>> {
-    let mut edges: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+/// One step of a loop: the inference that links a premise to its conclusion.
+#[derive(Clone, Copy)]
+struct Link<'a> {
+    inference: &'a str,
+    premise: &'a str,
+    conclusion: &'a str,
+}
+
+/// The loops in the edges premise → conclusion, one for each edge that closes a loop in a
+/// depth-first search, so that a single retry can break every loop found.
+fn find_loops(tree: &Tree) -> Vec<Vec<Link<'_>>> {
+    let mut edges: BTreeMap<&str, Vec<Link>> = BTreeMap::new();
     for inference in &tree.inferences {
         for premise in &inference.premises {
-            edges.entry(premise.as_str()).or_default().push(inference.conclusion.as_str());
+            let link = Link { inference: &inference.id, premise, conclusion: &inference.conclusion };
+            edges.entry(premise.as_str()).or_default().push(link);
         }
     }
 
@@ -144,44 +158,37 @@ fn find_loop(tree: &Tree) -> Option<Vec<ClaimId>> {
         Black,
     }
     let mut colour: BTreeMap<&str, Colour> = BTreeMap::new();
-    let mut stack: Vec<&str> = Vec::new();
+    let mut path: Vec<Link> = Vec::new();
+    let mut loops: Vec<Vec<Link>> = Vec::new();
 
     fn visit<'a>(
         node: &'a str,
-        edges: &BTreeMap<&'a str, Vec<&'a str>>,
+        edges: &BTreeMap<&'a str, Vec<Link<'a>>>,
         colour: &mut BTreeMap<&'a str, Colour>,
-        stack: &mut Vec<&'a str>,
-    ) -> Option<Vec<ClaimId>> {
+        path: &mut Vec<Link<'a>>,
+        loops: &mut Vec<Vec<Link<'a>>>,
+    ) {
         colour.insert(node, Colour::Grey);
-        stack.push(node);
-        for &next in edges.get(node).map(Vec::as_slice).unwrap_or(&[]) {
-            match colour.get(next).copied().unwrap_or(Colour::White) {
+        for &link in edges.get(node).map(Vec::as_slice).unwrap_or(&[]) {
+            path.push(link);
+            match colour.get(link.conclusion).copied().unwrap_or(Colour::White) {
                 Colour::Grey => {
-                    let from = stack.iter().position(|&n| n == next).unwrap_or(0);
-                    let mut path: Vec<ClaimId> = stack[from..].iter().map(|s| s.to_string()).collect();
-                    path.push(next.to_string());
-                    return Some(path);
+                    let from = path.iter().position(|l| l.premise == link.conclusion).unwrap_or(0);
+                    loops.push(path[from..].to_vec());
                 }
-                Colour::White => {
-                    if let Some(path) = visit(next, edges, colour, stack) {
-                        return Some(path);
-                    }
-                }
+                Colour::White => visit(link.conclusion, edges, colour, path, loops),
                 Colour::Black => {}
             }
+            path.pop();
         }
-        stack.pop();
         colour.insert(node, Colour::Black);
-        None
     }
 
     let nodes: Vec<&str> = edges.keys().copied().collect();
     for node in nodes {
-        if colour.get(node).copied().unwrap_or(Colour::White) == Colour::White
-            && let Some(path) = visit(node, &edges, &mut colour, &mut stack)
-        {
-            return Some(path);
+        if colour.get(node).copied().unwrap_or(Colour::White) == Colour::White {
+            visit(node, &edges, &mut colour, &mut path, &mut loops);
         }
     }
-    None
+    loops
 }
