@@ -76,7 +76,7 @@ async fn satisfied_in_round_two() {
     p.push(
         "advocate",
         format!(
-            r#"{{"answers": [{{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"]}}], "tree": {TREE}}}"#
+            r#"{{"answers": [{{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"], "premises": ["C1"]}}], "tree": {TREE}}}"#
         ),
     );
     p.push("adversary", r#"{"responses": [{"critique": "K1", "action": "drop"}], "satisfied": true}"#);
@@ -96,7 +96,7 @@ async fn limit_splits_open_and_unanswered() {
         "advocate",
         format!(
             r#"{{"answers": [
-                {{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"]}},
+                {{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"], "premises": ["C1"]}},
                 {{"critique": "K2", "kind": "accept", "reasons": "added C9"}}],
               "tree": {TREE_WITH_C9}}}"#
         ),
@@ -151,4 +151,59 @@ async fn limit_one_leaves_every_critique_unanswered() {
     assert!(out.open.is_empty());
     assert_eq!(ids(&out.unanswered, |c| &c.id), vec!["K1"]);
     assert_eq!(status(&out, "K1"), CritiqueStatus::Unanswered);
+}
+
+const CONCEDE_K1: &str = r#"{"critique": "K1", "kind": "concede", "reasons": "no premise the proposal could hold closes the gap"}"#;
+
+#[tokio::test]
+async fn conceded_critique_ends_conceded() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", format!(r#"{{"critiques": [{}], "satisfied": false}}"#, gap("K1")));
+    p.push("advocate", format!(r#"{{"answers": [{CONCEDE_K1}], "tree": {TREE}}}"#));
+    p.push("adversary", r#"{"satisfied": true}"#);
+    let out = debate(&p, 3).await;
+    assert_eq!(out.ending, Ending::Satisfied { round: 2 });
+    assert_eq!(status(&out, "K1"), CritiqueStatus::Conceded);
+}
+
+#[tokio::test]
+async fn concession_at_round_limit_stays_conceded() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", format!(r#"{{"critiques": [{}, {}], "satisfied": false}}"#, gap("K1"), gap("K2")));
+    p.push(
+        "advocate",
+        format!(
+            r#"{{"answers": [{CONCEDE_K1},
+                {{"critique": "K2", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"], "premises": ["C1"]}}],
+              "tree": {TREE}}}"#
+        ),
+    );
+    p.push(
+        "adversary",
+        r#"{"responses": [{"critique": "K2", "action": "maintain", "reasons": "the quote does not state Q"}],
+            "critiques": [{"id": "K3", "kind": "reading", "of": "C3", "point": "C is hedged", "support": "the text says C is true", "quotes": ["C is true"]}],
+            "satisfied": false}"#,
+    );
+    let out = debate(&p, 2).await;
+    assert_eq!(out.ending, Ending::LimitReached);
+    assert_eq!(status(&out, "K1"), CritiqueStatus::Conceded);
+    assert_eq!(status(&out, "K2"), CritiqueStatus::Open);
+    assert_eq!(status(&out, "K3"), CritiqueStatus::Unanswered);
+    assert_eq!(ids(&out.open, |o| &o.critique.id), vec!["K2"]);
+    assert_eq!(ids(&out.unanswered, |c| &c.id), vec!["K3"]);
+}
+
+#[tokio::test]
+async fn gap_on_conceded_inference_is_refused_and_retried() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", format!(r#"{{"critiques": [{}], "satisfied": false}}"#, gap("K1")));
+    p.push("advocate", format!(r#"{{"answers": [{CONCEDE_K1}], "tree": {TREE}}}"#));
+    p.push("adversary", format!(r#"{{"critiques": [{}], "satisfied": false}}"#, gap("K2")));
+    p.push("adversary", r#"{"satisfied": true}"#);
+    let out = debate(&p, 3).await;
+    assert_eq!(out.ending, Ending::Satisfied { round: 2 });
+    assert_eq!(p.calls(), vec!["advocate", "adversary", "advocate", "adversary", "adversary"]);
 }

@@ -8,10 +8,11 @@ An agent can't really review its own proposal. Every step in the argument came o
 
 Sed Contra gets that review from outside. The advocate rebuilds the proposal as a tree of claims and quotes the proposal's own words for each one, and code checks that every quote really is in the text. The adversary then goes looking for holes. If there's another round, the advocate answers each critique and fixes the tree where the critique is right, and the adversary gets to respond.
 
-A critique has to prove its point. "This seems weak" doesn't count. It has to do one of three things:
+A critique has to prove its point. "This seems weak" doesn't count. It has to do one of four things:
 
 - show a gap, with a case where the premises are true and the conclusion is still false;
 - show that a premise isn't needed, by reaching the conclusion without it;
+- show that a premise just restates the conclusion;
 - show a misreading, by quoting the passage the advocate got wrong.
 
 Say a proposal argues "our queries are slow, so we should move to Postgres". The adversary can answer that the queries might be slow because an index is missing, and then moving to Postgres fixes nothing. That's a gap: the proposal assumed, without saying so, that the database was the problem.
@@ -66,7 +67,7 @@ A run has five steps:
    - it leaves a critique unanswered.
 
    A rejected turn gets one retry with the failures listed. If the retry fails too, the run fails.
-3. **Debate.** The adversary critiques the tree under the rules above. The advocate accepts, adapts or rejects each critique and revises the tree for the ones it accepts or adapts. The adversary drops each rejected critique or keeps pressing it, then critiques the revised tree. This goes on until the adversary is satisfied or the round limit is reached.
+3. **Debate.** The adversary critiques the tree under the rules above. The advocate accepts, adapts, concedes or rejects each critique and revises the tree for the ones it accepts or adapts. The adversary drops each rejected critique or keeps pressing it, then critiques the revised tree. This goes on until the adversary is satisfied or the round limit is reached.
 4. **Findings.** The analyzers compare the final tree with the proposal. They flag claims the proposal states more than once, stretches of text no quote covers, and stubs: claims that never lead to a conclusion.
 5. **Report.** The report says how the debate ended. It holds a ledger of every critique with its final status, the final tree in Argdown, the changes the debate forced, the critiques left open or unanswered, the findings and the full transcript.
 

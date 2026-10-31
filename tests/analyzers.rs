@@ -19,6 +19,7 @@ fn inf(id: &str, premises: &[&str], conclusion: &str, places: &[&str]) -> Infere
         conclusion: conclusion.into(),
         places: places.iter().map(|p| p.to_string()).collect(),
         origin: None,
+        reported: false,
     }
 }
 

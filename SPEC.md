@@ -4,11 +4,13 @@
 
 An agent that writes a proposal draws every connection in it from its own model, so it has nothing outside itself to check those connections against. A connection it invented therefore reads exactly like one that holds. Text without any connection passes just as easily: a sentence that links to nothing, a conclusion announced before its argument, or a "not only X but also Y" where X and Y have no relation reads as fluently as an argument, and these are the marks of AI writing.
 
-The application counters both with an independent cross-examination. One agent, the advocate, reconstructs the proposal's argument as explicit inferences, and a second agent, the adversary, isolated from the first, attacks each inference under a shared standard of critique. Their debate shows the agent that wrote the proposal where it invents a connection, rests on a premise it never states, carries a premise its argument does not need, or carries text the argument does not use.
+The application counters both with an independent cross-examination. One agent, the advocate, reconstructs the proposal's argument as explicit inferences, and a second agent, the adversary, isolated from the first, attacks each inference under a shared standard of critique. Their debate shows the agent that wrote the proposal where it invents a connection, assumes what it concludes, rests on a premise it never states, carries a premise its argument does not need, or carries text the argument does not use.
 
 ## What the application is
 
 The application is a box that holds two boxes. The outer box, the orchestrator, takes a proposal from a calling agent, the caller, and runs the cross-examination. Inside it, the advocate reconstructs the proposal's argument as a tree of inferences, and the adversary critiques that tree. They debate under one shared standard, explanatory-critique, until the adversary is satisfied or a round limit is reached, and the orchestrator returns a report to the caller.
+
+The cross-examination sets out the argument the proposal makes and never builds a better one. It breaks that argument down into its inferences and everything they assume or presuppose for their conclusions. Every premise the proposal states is accepted as given, and so is every premise the debate shows an inference to need without the proposal stating it. A premise the argument turns out not to need is pruned, which corrects an argument that assumes more than it needs but still works. An inference is refuted when no premise the proposal could hold would complete it.
 
 The caller is autonomous. What it does with the report lies outside this project, whose product is the analysis, so the report describes the proposal and never rules on it.
 
@@ -21,10 +23,14 @@ The structure the advocate builds is a directed graph without cycles. This spec 
 | Term | Meaning |
 | --- | --- |
 | Proposal | The text the caller submits, of any length and subject. |
-| Claim | A substantive proposition the advocate finds in the proposal; a node of the tree. |
+| Claim | A substantive proposition of the argument, stated by the proposal or added during the debate; a node of the tree. |
+| Stated claim | A claim the proposal states, with at least one place. |
+| Added claim | A claim the advocate adds during the debate because an inference needs it and the proposal does not state it. It has no place, and its origin names the round and the critique that added it. |
 | Inference | A connection `P, Q → Z` from one or more premise claims to one conclusion claim; an edge of the tree. |
+| Reported inference | An inference the proposal sets out without drawing it in its own voice: it attributes the inference to someone else or sets it out in order to reject it. |
+| Conceded inference | An inference the advocate concedes to fail as the proposal draws it, in answer to a gap or circular critique. |
 | Place | An exact quote from the proposal that states a claim or an inference. |
-| Root | A claim that no inference concludes: a premise the proposal starts from. |
+| Root | A claim that no inference concludes: a premise the argument starts from. |
 | Leaf | A claim that no inference uses as a premise. |
 | Conclusion | A claim the advocate marks as what the proposal argues for. |
 | Stub | A group of claims, connected by inferences among themselves, from which no inference path reaches a conclusion. Its length is its number of claims. |
@@ -52,27 +58,23 @@ The advocate's first turn turns the proposal into a tree.
 2. It identifies the inferences between claims and records them in logical order, whatever order the text uses: "X because Y" becomes `Y → X`. The tree is therefore in logical order by construction, and nothing judges the order of the text itself.
 3. It marks the conclusion or conclusions the proposal argues for.
 4. It records every place that states each claim. For each inference it records the place that states the connection, such as the "because", when the text states one.
-5. It stays faithful to the caller. The first tree records the connections the proposal draws, including weak ones, and adds nothing the proposal did not say. Repair happens only in the debate, where every change traces back to a counter-proposal.
+5. It flags an inference as reported when the proposal does not draw it in its own voice, so that the debate tests the proposal's own argument.
+6. It stays faithful to the caller. The first tree records the connections the proposal draws, including weak ones, and adds nothing the proposal did not say. Repair happens only in the debate, where every change traces back to a counter-proposal.
 
-The orchestrator then checks the tree in code:
-
-- every inference refers to existing claims;
-- no path loops back on itself;
-- every place occurs in the proposal word for word, with whitespace normalised, and the orchestrator records where;
-- every claim taken from the proposal has at least one place;
-- at least one conclusion is marked.
-
-When a check fails, the advocate gets the failures and one retry, and a second failure fails the run. The same checks apply to every revised tree the advocate submits during the debate. A claim the advocate adds during the debate has no place; it records instead the round and the counter-proposal that added it.
+The orchestrator then checks the tree in code, as set out under [The checks](#the-checks), and puts every revised tree the advocate submits during the debate through the same checks. A claim the advocate adds during the debate has no place; it records instead the round and the counter-proposal that added it.
 
 ### Explanatory-critique
 
-The advocate and the adversary argue under one standard, and it binds both sides equally. A critique takes one of three kinds.
+The advocate and the adversary argue under one standard, and it binds both sides equally. A critique takes one of four kinds.
 
-- **Gap.** A critique of an inference names concretely what the inference misses and shows a case in which its premises hold and its conclusion fails. For `X → Y` it shows that X can be true while Y is false, typically as `X ∧ ¬Q → ¬Y`, which exposes Q as a premise the inference assumes. The standard covers every form of argument: deductive, causal, analogical and definitional. A claim that X is necessary for Y is the inference `¬X → ¬Y` and is critiqued the same way. An insufficient or inconclusive inference, a hidden premise and an invented connection are each shown by such a case.
-- **Superfluous premise.** A critique of a premise shows that the inference does not need it, by deriving the inference's conclusion from its other premises. A counter-case cannot expose such a premise, because the inference holds with or without it. Accepting the critique removes the premise from the inference; if no other inference uses it, the stub finding then reports it for pruning.
-- **Reading.** A critique of the advocate's reading quotes the place the advocate misread and gives the reading the text supports.
+- **Gap.** A critique of an inference names concretely what the inference misses and shows a case in which its premises hold and its conclusion fails. For `X → Y` it shows that X can be true while Y is false, typically as `X ∧ ¬Q → ¬Y`, which exposes Q as a premise the inference assumes. The standard covers every form of argument: deductive, causal, analogical and definitional. A claim that X is necessary for Y is the inference `¬X → ¬Y` and is critiqued the same way. An insufficient or inconclusive inference, a hidden premise and an invented connection are each shown by such a case. What a conclusion presupposes is exposed the same way, since a case in which the presupposition fails is a case in which the conclusion fails.
+- **Superfluous premise.** A critique of a premise shows that the inference does not need it, by deriving the inference's conclusion from its other premises. A counter-case cannot expose such a premise, because the inference holds with or without it. Accepting the critique removes the premise from the inference; if no other inference uses it, the stub finding then reports it for pruning. The inference must keep a stated premise, so a superfluous critique cannot reduce it to premises the advocate added.
+- **Circular premise.** A critique of a premise shows that the premise asserts the inference's conclusion, wholly or in part, so the inference assumes what it concludes. Against an added claim it exposes a patch that restates the conclusion, which the advocate then removes; against a stated claim it shows that the proposal argues in a circle. A conditional whose consequent is the conclusion is not circular on that ground, because it often states the very connection a gap critique exposed.
+- **Reading.** A critique of the advocate's reading quotes the place the advocate misread and gives the reading the text supports. The misreading can lie in a claim, in an inference the tree records or leaves out, or in a reported flag. An added claim that contradicts the proposal is a misreading too, which the critique shows by quoting the place it contradicts.
 
-An objection without its named target and its case, derivation or reading does not count. Code checks only the form: each critique names its kind, its target, its point and its support, and each rejection names its ground. A turn that fails the form check gets one retry, and a second failure fails the run. The other side judges the substance under the same rules, so no third agent referees.
+Two kinds of inference take only reading critiques: a reported inference, which is not part of the proposal's own argument, and a conceded inference, which the debate has already shown to fail.
+
+An objection without its named target and its case, derivation or reading does not count. Code decides what it can decide without judging meaning, as set out under [The checks](#the-checks), and the other side judges the substance under the same rules, so no third agent referees.
 
 ### The debate
 
@@ -80,15 +82,46 @@ The turn order is advocate 1, adversary 1, advocate 2, adversary 2, … so that 
 
 - **Round 1.** The advocate builds the tree. The adversary critiques it with counter-proposals, or declares itself satisfied.
 - **Later rounds.** The advocate answers every counter-proposal from the adversary's last turn and submits the revised tree. The adversary then responds.
-- **The advocate's answers.** The advocate accepts a counter-proposal and changes the tree as it says, adapts it by changing the tree differently in a way that answers the critique, or rejects it. Every answer gives its reasons. A rejection meets explanatory-critique in turn, on one of three grounds: the proposal states the missing premise at a quoted place, the premise follows from claims the proposal makes, or the counter-proposal's own premises can hold while its conclusion fails. The last ground also answers a superfluous-premise critique: a case where the remaining premises hold and the conclusion fails shows the premise is needed.
+- **The advocate's answers.** The advocate answers each counter-proposal in one of four ways and gives its reasons.
+  - **Accept.** It changes the tree as the critique says: it adds the missing premise for a gap, removes the premise for a superfluous critique, removes the added premise for a circular critique, and corrects the reading for a reading critique.
+  - **Adapt.** It changes the tree differently, in a way that answers the critique.
+  - **Concede.** It grants that a gap or circular critique refutes the inference as the proposal draws it. It concedes when no premise the proposal could hold closes the gap, because any such premise would contradict the proposal or assert the conclusion, or when a stated premise asserts the conclusion. The inference stays in the tree, marked as conceded, so that the report shows the refutation; an added premise that a conceded circular critique names leaves it.
+  - **Reject.** It shows that the critique fails, on one of three grounds: the proposal states the missing premise at a quoted place, the premise follows from claims the proposal makes, or the counter-proposal's own premises can hold while its conclusion fails. A rejection on the first two grounds names the claims that supply the premise, and the revised tree carries them as premises of the inference, so that the report can show how the conclusion depends on them. The last ground also answers a superfluous or circular critique: a case where the remaining premises hold and the conclusion fails shows that the premise is needed, and a case where the premise holds and the conclusion fails shows that the premise does not assert the conclusion.
 - **True is not stated.** The advocate may not reject a critique because the missing premise is true. The argument still rests on a premise the proposal never states, and exposing such premises is the report's purpose. The advocate accepts the critique and adds the premise, marking it as backed by the caller's context when the context supports it.
-- **Quotes are checked.** Every quote in a rejection or in a reading critique must occur in the proposal word for word, under the same check as the places in the tree.
-- **The adversary's response.** The adversary drops each rejected critique or maintains it with an answer to the advocate's reasons, checks each adaptation, and critiques the revised tree afresh. It declares itself satisfied when it can show no critique that meets the standard.
-- **Completeness.** The orchestrator checks that the advocate answered every counter-proposal and that the adversary answered every rejection. A turn that skips one gets one retry, and a second skip fails the run.
+- **The adversary's response.** The adversary drops each rejected critique or maintains it with an answer to the advocate's reasons, checks each adaptation, and critiques the revised tree afresh. A conceded critique is settled and takes no response. The adversary declares itself satisfied when it can show no critique that meets the standard.
 - **Ending.** The debate ends at the first adversary turn that declares satisfaction, or when the round limit is reached. When the adversary is not satisfied in its last turn, its critiques fall into two groups. A critique it maintained against the advocate's rejection has been argued by both sides and is an open critique. A critique new in that turn never reached the advocate, so the report labels it unanswered.
 - **Round limit.** Set in configuration: default 1, range 1–10, and a value outside the range is clamped with a warning so a mistyped setting cannot run without end. With one round the adversary critiques the advocate's first tree once, and every critique reaches the caller unanswered. The MCP tool has no field for the limit, so every MCP call runs under the configured one. On the command line, `run --rounds` sets the limit of one run, and the evaluation sets its own limit of 10 through `eval --rounds`.
 
 Every turn sees the proposal, the caller's context and every earlier turn of the debate.
+
+### The checks
+
+Code decides whatever it can decide without judging meaning, so that neither agent has to notice it. The agents judge only what meaning settles, such as whether a case defeats an inference, a derivation holds or a reading is right.
+
+Every tree the advocate submits passes these checks:
+
+- every inference refers to existing claims and has at least one premise, and at least one conclusion is marked;
+- no path loops back on itself;
+- every place occurs in the proposal word for word, with whitespace normalised, and the orchestrator records where;
+- every claim has a place, or an origin as an added claim, and the first tree has no added claims and no origins.
+
+The advocate's answers pass these checks:
+
+- the advocate answers every critique that the adversary raised or maintained in its last turn, once, and no other;
+- every answer gives reasons, every rejection names its ground, and every quote occurs in the proposal word for word;
+- only a gap or circular critique can be conceded, and a circular critique can be accepted only against an added premise;
+- rejecting a gap critique on the stated or follows ground names stated claims that the revised tree carries as premises of the inference, and every quote of a stated rejection lies within a place of a named claim.
+
+Every adversary turn passes these checks:
+
+- every critique has an id no earlier critique used and names its kind, its target, its point and its support;
+- a gap, superfluous or circular critique targets an inference that is neither reported nor conceded, and a superfluous or circular critique names one of that inference's premises;
+- a superfluous critique targets an inference with at least two premises and leaves it a stated premise;
+- a reading critique quotes at least one place, and every quote occurs in the proposal word for word;
+- the adversary responds to every rejection and to no conceded critique, and gives reasons for every critique it maintains;
+- the adversary declares itself satisfied exactly when its turn raises and maintains nothing.
+
+A turn that fails a check gets the list of failures and one retry, and a second failure fails the run. Each failure names what broke the check and what would satisfy it, so the fix on retry is mechanical.
 
 ### What the report contains
 
@@ -96,7 +129,7 @@ Every turn sees the proposal, the caller's context and every earlier turn of the
 | --- | --- |
 | Run | the run id and the location of its record |
 | Ending | the adversary satisfied in round r of N, or the round limit reached with open or unanswered critiques. It describes how the debate ended and is never a verdict. |
-| Critique ledger | one row per critique: its kind, its target, the round that raised it and its final status, which is accepted, adapted, dropped after rejection, open or unanswered |
+| Critique ledger | one row per critique: its kind, its target, the round that raised it and its final status, which is accepted, adapted, conceded, dropped after rejection, open or unanswered |
 | Final tree | claims, inferences and conclusions, each marked with its places in the proposal or with the round and counter-proposal that added it |
 | Changes | every accepted or adapted counter-proposal and what it changed. An added claim is a premise the proposal needed and did not state; a removed premise is one it did not need. |
 | Open critiques | when the limit was reached: the critiques the adversary maintained against the advocate's rejection, each with both sides' arguments |
@@ -147,7 +180,7 @@ Every decision in this spec can change without a rewrite of the core, which hold
 
 - the data model: proposal, claims, inferences, places, tree, counter-proposals, answers, turns and report;
 - the debate loop, with its turn order, completeness checks, early stop and round limit;
-- the tree checks.
+- the checks.
 
 Every other part sits behind one interface, so it can be replaced, and new parts of the same kind can be added alongside:
 
@@ -201,14 +234,15 @@ The first tree states what the text says, so a low share of implicit premises th
 - The async runtime is tokio, which `rmcp` is built on.
 - The MCP server runs over stdio.
 - Testing. The build is not test-driven, and code that compiles counts as done. Tests cover only the areas where compiling code can still produce a wrong report without any visible error, and they use a scripted model with no network. Those areas are:
-  - the tree checks, especially loop detection and the word-for-word quote check;
+  - the checks, especially loop detection and the word-for-word quote check;
   - the analyzers, on hand-built trees;
-  - the ending of the debate: the early stop at the first satisfied adversary turn and the split into open and unanswered critiques.
+  - the ending of the debate: the early stop at the first satisfied adversary turn, the split into open and unanswered critiques, and the status each critique ends with;
   - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
 
 ## Non-goals
 
 - Judging the proposal. The report describes and the caller decides.
+- Disputing a premise. Every premise the proposal states, and every premise its inferences need without stating it, is accepted as given; the report shows what the argument rests on, and the caller weighs it.
 - Anything the caller does with the report.
 - Judging the order of the proposal's text. The tree is rebuilt in logical order, and the restatement finding catches a conclusion stated before its argument.
 - A separate prune function. Prune suggestions are part of the report.

@@ -27,6 +27,13 @@ pub struct Claim {
     pub backed_by_context: bool,
 }
 
+impl Claim {
+    /// Whether the advocate added the claim during the debate; a claim without an origin is stated.
+    pub fn is_added(&self) -> bool {
+        self.origin.is_some()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Inference {
     pub id: InferenceId,
@@ -37,6 +44,9 @@ pub struct Inference {
     pub places: Vec<String>,
     #[serde(default)]
     pub origin: Option<Origin>,
+    /// The proposal sets the inference out without drawing it in its own voice.
+    #[serde(default)]
+    pub reported: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -54,6 +64,7 @@ pub struct Tree {
 pub enum AnswerKind {
     Accept,
     Adapt,
+    Concede,
     Reject,
 }
 
@@ -76,6 +87,9 @@ pub struct Answer {
     pub reasons: String,
     #[serde(default)]
     pub quotes: Vec<String>,
+    /// For a rejection on stated or follows: the claims that supply the missing premise.
+    #[serde(default)]
+    pub premises: Vec<ClaimId>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -91,6 +105,7 @@ pub struct AdvocateTurn {
 pub enum Target {
     Gap { inference: InferenceId },
     Superfluous { inference: InferenceId, premise: ClaimId },
+    Circular { inference: InferenceId, premise: ClaimId },
     /// `of` names a claim or an inference.
     Reading { of: String },
 }
@@ -100,6 +115,7 @@ impl Target {
         match self {
             Target::Gap { .. } => "gap",
             Target::Superfluous { .. } => "superfluous",
+            Target::Circular { .. } => "circular",
             Target::Reading { .. } => "reading",
         }
     }
@@ -107,8 +123,28 @@ impl Target {
     pub fn describe(&self) -> String {
         match self {
             Target::Gap { inference } => inference.clone(),
-            Target::Superfluous { inference, premise } => format!("{premise} in {inference}"),
+            Target::Superfluous { inference, premise } | Target::Circular { inference, premise } => {
+                format!("{premise} in {inference}")
+            }
             Target::Reading { of } => of.clone(),
+        }
+    }
+
+    /// The inference a gap, superfluous or circular critique attacks.
+    pub fn inference(&self) -> Option<&str> {
+        match self {
+            Target::Gap { inference } | Target::Superfluous { inference, .. } | Target::Circular { inference, .. } => {
+                Some(inference)
+            }
+            Target::Reading { .. } => None,
+        }
+    }
+
+    /// The premise a superfluous or circular critique names.
+    pub fn premise(&self) -> Option<&str> {
+        match self {
+            Target::Superfluous { premise, .. } | Target::Circular { premise, .. } => Some(premise),
+            Target::Gap { .. } | Target::Reading { .. } => None,
         }
     }
 }
@@ -202,6 +238,7 @@ pub enum Ending {
 pub enum CritiqueStatus {
     Accepted,
     Adapted,
+    Conceded,
     DroppedAfterRejection,
     Open,
     Unanswered,

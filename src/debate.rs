@@ -10,7 +10,7 @@ use crate::actor::AgentHandle;
 use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn};
 use crate::model::{
     AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, Critique, CritiqueId,
-    CritiqueStatus, DebateOutcome, Ending, LedgerRow, OpenCritique, ResponseAction, Turn,
+    CritiqueStatus, DebateOutcome, Ending, InferenceId, LedgerRow, OpenCritique, ResponseAction, Turn,
 };
 
 pub struct DebateInput {
@@ -44,6 +44,8 @@ pub async fn run_debate(
     let max = 2 * input.round_limit;
     let mut turns: Vec<Turn> = Vec::new();
     let mut used_ids: BTreeSet<CritiqueId> = BTreeSet::new();
+    let mut critiques: BTreeMap<CritiqueId, Critique> = BTreeMap::new();
+    let mut conceded: BTreeMap<CritiqueId, InferenceId> = BTreeMap::new();
     let mut last_adversary: Option<AdversaryTurn> = None;
     let mut final_tree: Option<CheckedTree> = None;
     let mut ending = Ending::LimitReached;
@@ -60,21 +62,30 @@ pub async fn run_debate(
         rounds_run = round;
 
         let (message, expected) = match &last_adversary {
-            None => (first_advocate_message(input), BTreeSet::new()),
+            None => (first_advocate_message(input), BTreeMap::new()),
             Some(last) => (
                 format!(
                     "## The adversary's turn, round {}\n\n{}\n\nAnswer every critique raised or maintained above, then give the full revised tree.",
                     round - 1,
                     pretty(last)
                 ),
-                expected_answers(last),
+                expected_answers(last)
+                    .into_iter()
+                    .filter_map(|id| critiques.get(&id).map(|c| (id, c.clone())))
+                    .collect(),
             ),
         };
+        let previous = final_tree.as_ref();
         let ((advocate_turn, checked), raw) = take_turn(advocate, "advocate", message, cancel, &turns, |value| {
             let turn: AdvocateTurn = shaped(value)?;
-            check_advocate_turn(&index, turn, round, &expected)
+            check_advocate_turn(&index, turn, round, &expected, previous)
         })
         .await?;
+        for answer in advocate_turn.answers.iter().filter(|a| a.kind == AnswerKind::Concede) {
+            if let Some(inference) = expected.get(&answer.critique).and_then(|c| c.target.inference()) {
+                conceded.insert(answer.critique.clone(), inference.to_string());
+            }
+        }
         let rejected: BTreeSet<CritiqueId> = advocate_turn
             .answers
             .iter()
@@ -98,12 +109,13 @@ pub async fn run_debate(
         let tree = &checked;
         let (adversary_turn, raw) = take_turn(adversary, "adversary", message, cancel, &turns, |value| {
             let turn: AdversaryTurn = shaped(value)?;
-            check_adversary_turn(&index, &turn, tree, &rejected, &used_ids)?;
+            check_adversary_turn(&index, &turn, tree, &rejected, &used_ids, &conceded)?;
             Ok(turn)
         })
         .await?;
         final_tree = Some(checked);
         used_ids.extend(adversary_turn.critiques.iter().map(|c| c.id.clone()));
+        critiques.extend(adversary_turn.critiques.iter().map(|c| (c.id.clone(), c.clone())));
         let satisfied = adversary_turn.satisfied;
         record(Turn::Adversary { round, turn: adversary_turn.clone() }, raw, &mut turns);
         if satisfied {
@@ -259,6 +271,7 @@ pub fn build_ledger(turns: &[Turn]) -> Vec<LedgerRow> {
                         rows[i].2 = match answer.kind {
                             AnswerKind::Accept => State::Settled(CritiqueStatus::Accepted),
                             AnswerKind::Adapt => State::Settled(CritiqueStatus::Adapted),
+                            AnswerKind::Concede => State::Settled(CritiqueStatus::Conceded),
                             AnswerKind::Reject => State::Rejected,
                         };
                     }

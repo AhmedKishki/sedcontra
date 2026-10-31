@@ -267,6 +267,7 @@ fn status_label(status: CritiqueStatus) -> &'static str {
     match status {
         CritiqueStatus::Accepted => "accepted",
         CritiqueStatus::Adapted => "adapted",
+        CritiqueStatus::Conceded => "conceded",
         CritiqueStatus::DroppedAfterRejection => "dropped after rejection",
         CritiqueStatus::Open => "open",
         CritiqueStatus::Unanswered => "unanswered",
@@ -278,6 +279,7 @@ fn kind_label(answer: &Answer) -> String {
     match (answer.kind, answer.ground) {
         (AnswerKind::Accept, _) => "accepted".into(),
         (AnswerKind::Adapt, _) => "adapted".into(),
+        (AnswerKind::Concede, _) => "conceded".into(),
         (AnswerKind::Reject, Some(Ground::Stated)) => "rejected: stated".into(),
         (AnswerKind::Reject, Some(Ground::Follows)) => "rejected: follows".into(),
         (AnswerKind::Reject, Some(Ground::CounterFails)) => "rejected: counter_fails".into(),
