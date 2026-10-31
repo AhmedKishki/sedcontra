@@ -289,6 +289,18 @@ fn outcome(turns: Vec<Turn>, final_tree: CheckedTree, ending: Ending, rounds_run
         .filter(|r| r.status == CritiqueStatus::DroppedAfterRejection)
         .map(|r| r.critique.id.as_str())
         .collect();
+    // A stated premise closes a gap only when the adversary dropped the critique in answer to that
+    // rejection, not to a later one on another ground.
+    let drops: BTreeSet<(u32, &str)> = turns
+        .iter()
+        .filter_map(|t| match t {
+            Turn::Adversary { round, turn } => Some(
+                turn.responses.iter().filter(|r| r.action == ResponseAction::Drop).map(move |r| (*round, r.critique.as_str())),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect();
     let (mut changes, mut conceded, mut closed) = (Vec::new(), Vec::new(), Vec::new());
     let mut previous: Option<&Tree> = None;
     for (round, turn) in turns.iter().filter_map(|t| match t {
@@ -309,7 +321,8 @@ fn outcome(turns: Vec<Turn>, final_tree: CheckedTree, ending: Ending, rounds_run
                 AnswerKind::Reject => {
                     let closes = matches!(answer.ground, Some(Ground::Stated | Ground::Follows))
                         && matches!(critique.target, Target::Gap { .. })
-                        && dropped.contains(critique.id.as_str());
+                        && dropped.contains(critique.id.as_str())
+                        && drops.contains(&(round, critique.id.as_str()));
                     if closes {
                         closed.retain(|c: &Change| c.critique.id != critique.id);
                         closed.push(change);

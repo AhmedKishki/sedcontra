@@ -229,6 +229,33 @@ async fn conceded_and_closed_lists() {
 }
 
 #[tokio::test]
+async fn closed_needs_the_drop_that_answered_the_stated_rejection() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
+    p.push("adversary", format!(r#"{{"critiques": [{}], "satisfied": false}}"#, gap("K1")));
+    p.push(
+        "advocate",
+        format!(
+            r#"{{"answers": [{{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"], "premises": ["C1"]}}], "tree": {TREE}}}"#
+        ),
+    );
+    p.push(
+        "adversary",
+        r#"{"responses": [{"critique": "K1", "action": "maintain", "reasons": "A does not state Q"}], "satisfied": false}"#,
+    );
+    p.push(
+        "advocate",
+        format!(
+            r#"{{"answers": [{{"critique": "K1", "kind": "reject", "ground": "counter_fails", "reasons": "Q holds whenever A does"}}], "tree": {TREE}}}"#
+        ),
+    );
+    p.push("adversary", r#"{"responses": [{"critique": "K1", "action": "drop"}], "satisfied": true}"#);
+    let out = debate(&p, 3).await;
+    assert_eq!(status(&out, "K1"), CritiqueStatus::DroppedAfterRejection);
+    assert!(out.closed.is_empty(), "{:?}", ids(&out.closed, |c| &c.critique.id));
+}
+
+#[tokio::test]
 async fn two_critiques_on_one_inference_split_their_effects() {
     let p = Arc::new(ScriptedProvider::new());
     p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
