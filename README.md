@@ -1,6 +1,6 @@
 <h1 align="center"><img src="docs/logo.svg" alt="Sed Contra" width="640"></h1>
 
-Sed Contra checks the reasoning in a proposal your agent wrote. Two separate agents work through it: one rebuilds the argument, the other tries to break it, and you get back a report of what held up and what didn't.
+An agent builds the argument, the other tries to break it.
 
 ## The idea
 
@@ -55,24 +55,11 @@ flowchart TB
     frontends -->|"report"| caller
 ```
 
-Each part of the diagram has its own module:
-
-| Part | Module | Job |
-| --- | --- | --- |
-| Front ends | `src/mcp.rs`, `src/main.rs` | Takes the proposal and its context from the caller and returns the report, as an MCP tool over stdio or as a command. |
-| Orchestrator | `src/run.rs`, `src/debate.rs` | Passes each turn between the advocate and the adversary and ends the debate. |
-| Advocate, adversary | `src/actor.rs`, `agents/` | Each runs as its own task with its own history and no tools, so it sees only what the orchestrator sends it. |
-| Checks | `src/check/` | Rejects a malformed tree or turn before the debate goes on. |
-| Model provider | `src/provider/` | Sends each agent's requests to the provider its configuration names, DeepSeek by default. |
-| Analyzers | `src/analyze/` | Computes the findings from the final tree without a model call. |
-| Report | `src/report/` | Builds the report from the debate's outcome and the findings, and renders it as markdown, JSON and Argdown. |
-| Run record | `src/record.rs` | Writes one folder per run with the inputs, the resolved settings, every turn as it completes, and the report. |
-| Evaluation | `src/eval.rs` | Runs the orchestrator on each record of the Arguinas test split, then has a judge agent score each report against the record's reference reconstruction. |
-
 A run has five steps:
 
 1. **Reconstruction.** The first tree has claims as its nodes and inferences `P, Q → Z` as its edges, and every claim carries the exact quotes that state it. The advocate records the proposal as written, weak links included, so every later change can be traced to a critique.
 2. **Checks.** Code rejects a turn when:
+
    - its tree has a loop, a reference to an unknown claim, or no marked conclusion;
    - it quotes text that isn't in the proposal word for word;
    - a critique or an answer in it is missing a required part;
@@ -101,24 +88,14 @@ Paths below are for Linux.
    ```
 
    Run it again after you pull to update the installed binary.
-
-2. Store the provider's key yourself, in your own terminal. If an agent does it for you, the key ends up in the agent's context.
+2. Store the provider's key yourself, in your own terminal.
 
    ```sh
    sedcontra key set deepseek
    ```
 
-   The command reads the key without echoing it and stores it in `~/.config/sedcontra/keys/deepseek`, a file only you can read. `DEEPSEEK_API_KEY` works as a fallback for CI and is only read when there's no key file. Don't export it from your shell profile, since any agent with a shell can print it. Don't pass it to an MCP client with `-e` either, since an agent with file tools can read it from the client's config.
-
-3. Keep agents out of the key directory. An agent that runs commands as you can read any file you can. In Claude Code, add this rule to `~/.claude/settings.json`:
-
-   ```json
-   { "permissions": { "deny": ["Read(~/.config/sedcontra/keys/**)"] } }
-   ```
-
-   The rule stops Claude Code's file tools and the Bash commands it recognises, like `cat`. It doesn't stop a script that opens the file itself. For that you need [Claude Code's sandbox](https://code.claude.com/docs/en/sandboxing), which restricts every process.
-
-4. Register the MCP server. With Claude Code:
+   The command reads the key without echoing it and stores it in `~/.config/sedcontra/keys/deepseek`, a file only you can read.
+3. Register the MCP server. With Claude Code:
 
    ```sh
    claude mcp add sedcontra -- "$(command -v sedcontra)" serve
@@ -142,5 +119,5 @@ Defaults live in [config/default.toml](config/default.toml). Sed Contra reads `s
 - Hyun Ryu, Gyouk Chu, Gregor Betz, Eunho Yang, Carolyn Rose and Sean Welleck. *Argument Reconstruction as Supervision for Critical Thinking in LLMs*. [arXiv:2603.17432](https://arxiv.org/abs/2603.17432), 2026. The paper behind the GAAR reconstruction engine and the Arguinas dataset. The unneeded-premise critique comes from GAAR's reduction to minimal premise sets.
 - [Arguinas](https://github.com/GyoukChu/Arguinas): code and data. `sedcontra eval` scores against its test split. The dataset has no license, so download it for local use and keep it out of this repository.
 - [Argdown](https://argdown.org): the syntax the final tree is written in, so it opens as an argument map in Argdown's tools.
-- [Adversarial agents example in Microsoft's MCP for Beginners](https://github.com/microsoft/mcp-for-beginners/blob/main/05-AdvancedTopics/mcp-adversarial-agents/README.md): where the idea of giving each agent its own history comes from.
+- [Adversarial agents example in Microsoft&#39;s MCP for Beginners](https://github.com/microsoft/mcp-for-beginners/blob/main/05-AdvancedTopics/mcp-adversarial-agents/README.md): where the idea of giving each agent its own history comes from.
 - [Elenchus](https://github.com/jhlee0409/elenchus-mcp): tracks each issue in a debate through explicit states, and the critique ledger borrows that approach.
