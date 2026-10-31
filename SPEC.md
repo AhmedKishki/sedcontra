@@ -34,6 +34,7 @@ The structure the advocate builds is a directed graph without cycles. This spec 
 | Root | A claim that no inference concludes: a premise the argument starts from. |
 | Leaf | A claim that no inference uses as a premise. |
 | Conclusion | A claim the advocate marks as what the proposal argues for. |
+| Unsupported conclusion | A conclusion that no inference concludes, apart from reported ones. |
 | Stub | A group of claims, connected by inferences among themselves, from which no inference path reaches a conclusion. Its length is its number of claims. |
 | Restatement | A claim the proposal states in more than one place. |
 | Uncovered text | A stretch of the proposal that no place quotes. |
@@ -90,6 +91,7 @@ The turn order is advocate 1, adversary 1, advocate 2, adversary 2, … so that 
   - **Reject.** It shows that the critique fails, on one of three grounds: the proposal states the missing premise at a quoted place, the premise follows from claims the proposal makes, or the counter-proposal's own premises can hold while its conclusion fails. A rejection on the first two grounds names the claims that supply the premise, and the revised tree carries them as premises of the inference, so that the report can show how the conclusion depends on them. The last ground also answers a superfluous or circular critique: a case where the remaining premises hold and the conclusion fails shows that the premise is needed, and a case where the premise holds and the conclusion fails shows that the premise does not assert the conclusion.
 - **True is not stated.** The advocate may not reject a critique because the missing premise is true. The argument still rests on a premise the proposal never states, and exposing such premises is the report's purpose. The advocate accepts the critique and adds the premise, marking it as backed by the caller's context when the context supports it.
 - **The adversary's response.** The adversary drops each rejected critique or maintains it with an answer to the advocate's reasons, checks each adaptation, and critiques the revised tree afresh. A conceded critique is settled and takes no response. The adversary declares itself satisfied when it can show no critique that meets the standard.
+- **What code finds.** Each adversary turn lists the cases code found for the adversary to judge, as set out under [The checks](#the-checks).
 - **Ending.** The debate ends at the first adversary turn that declares satisfaction, or when the round limit is reached. When the adversary is not satisfied in its last turn, its critiques fall into two groups. A critique it maintained against the advocate's rejection has been argued by both sides and is an open critique. A critique new in that turn never reached the advocate, so the report labels it unanswered.
 - **Round limit.** Set in configuration: default 1, range 1–10, and a value outside the range is clamped with a warning so a mistyped setting cannot run without end. With one round the adversary critiques the advocate's first tree once, and every critique reaches the caller unanswered. The MCP tool has no field for the limit, so every MCP call runs under the configured one. On the command line, `run --rounds` sets the limit of one run, and the evaluation sets its own limit of 10 through `eval --rounds`.
 
@@ -97,7 +99,7 @@ Every turn sees the proposal, the caller's context and every earlier turn of the
 
 ### The checks
 
-Code decides whatever it can decide without judging meaning, so that neither agent has to notice it. The agents judge only what meaning settles, such as whether a case defeats an inference, a derivation holds or a reading is right.
+Code decides whatever it can decide without judging meaning, so that neither agent has to notice it. Where finding a case needs no meaning but judging it does, code finds the case, the orchestrator lists it in the adversary's next message, and the report shows it. The agents judge only what meaning settles, such as whether a case defeats an inference, a derivation holds or a reading is right.
 
 Every tree the advocate submits passes these checks:
 
@@ -143,7 +145,14 @@ Every adversary turn passes these checks:
 
 A turn that fails a check gets the list of failures and one retry, and a second failure fails the run. Each failure names what broke the check and what would satisfy it, so the fix on retry is mechanical.
 
-The connectives and the qualifier words live in the configuration, so they can follow the language of the proposal.
+Code finds these cases for the adversary to judge:
+
+- an unsupported conclusion, as a candidate for a connection the tree leaves out;
+- a circular candidate: a premise that holds at least a configured share, 0.8 by default, of its conclusion's content words, which are the words outside a configured list of stopwords. It stays a candidate and is never refused, because a conditional whose consequent is the conclusion holds the conclusion's words by nature, and telling such a conditional from a restatement depends on its logical form, which only meaning settles;
+- a conceded inference, which takes only reading critiques;
+- a critique dropped after a rejection on the stated or follows ground, with the claims that closed it.
+
+The connectives, the qualifier words, the share and the stopwords live in the configuration, so they can follow the language of the proposal.
 
 ### What the report contains
 

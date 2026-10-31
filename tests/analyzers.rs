@@ -1,5 +1,5 @@
 use sedcontra::analyze::{Analyzer, Finding, Restatement, Stubs, Uncovered};
-use sedcontra::check::{QuoteIndex, check_tree};
+use sedcontra::check::{CircularCandidate, QuoteIndex, check_tree, circular_candidates, unsupported_conclusions};
 use sedcontra::config::CheckConfig;
 use sedcontra::model::{CheckedTree, Claim, Inference, Tree};
 
@@ -138,4 +138,57 @@ fn unused_conclusion_of_argument_is_stub() {
         &["Z"],
     );
     assert_eq!(stubs(Stubs { max_len: 2 }.analyze(LETTERS, &t)), vec![(vec!["S".to_string()], true)]);
+}
+
+fn says(id: &str, text: &str) -> Claim {
+    let mut c = claim(id, &[]);
+    c.text = text.into();
+    c
+}
+
+fn reported(mut inference: Inference) -> Inference {
+    inference.reported = true;
+    inference
+}
+
+fn plain(claims: Vec<Claim>, inferences: Vec<Inference>, conclusions: &[&str]) -> Tree {
+    Tree { claims, inferences, conclusions: conclusions.iter().map(|c| c.to_string()).collect() }
+}
+
+#[test]
+fn unsupported_conclusion_ignores_reported_support() {
+    let t = plain(
+        vec![claim("X", &[]), claim("Z1", &[]), claim("Z2", &[])],
+        vec![reported(inf("I1", &["X"], "Z1", &[])), inf("I2", &["X"], "Z2", &[])],
+        &["Z1", "Z2"],
+    );
+    assert_eq!(unsupported_conclusions(&t), vec!["Z1".to_string()]);
+}
+
+#[test]
+fn circular_candidate_finds_a_restated_conclusion() {
+    let t = plain(
+        vec![
+            says("C1", "prices change hourly"),
+            says("C9", "the cache serves fresh prices to the dashboard"),
+            says("C3", "the cache serves fresh prices to every dashboard"),
+        ],
+        vec![inf("I1", &["C1", "C9"], "C3", &[])],
+        &["C3"],
+    );
+    let found = circular_candidates(&t, &CheckConfig::bundled());
+    assert_eq!(
+        found,
+        vec![CircularCandidate { inference: "I1".into(), premise: "C9".into(), conclusion: "C3".into(), share: 1.0 }]
+    );
+}
+
+#[test]
+fn circular_candidate_ignores_stopwords_and_threshold() {
+    let t = plain(
+        vec![says("C1", "it is the one"), says("C2", "the cache persists"), says("C3", "the cache is warm")],
+        vec![inf("I1", &["C1", "C2"], "C3", &[])],
+        &["C3"],
+    );
+    assert_eq!(circular_candidates(&t, &CheckConfig::bundled()), Vec::<CircularCandidate>::new());
 }

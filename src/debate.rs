@@ -7,12 +7,17 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::actor::AgentHandle;
-use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn};
+use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn, circular_candidates, unsupported_conclusions};
 use crate::config::CheckConfig;
 use crate::model::{
-    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, Critique, CritiqueId,
-    CritiqueStatus, DebateOutcome, Ending, InferenceId, LedgerRow, OpenCritique, ResponseAction, Turn,
+    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, ClaimId, Critique, CritiqueId,
+    CritiqueStatus, DebateOutcome, Ending, Ground, InferenceId, LedgerRow, OpenCritique, ResponseAction, Target, Tree,
+    Turn,
 };
+
+/// A gap critique dropped after a rejection on stated or follows: its inference and the claims
+/// the rejection named.
+type Closed = (CritiqueId, InferenceId, Vec<ClaimId>);
 
 pub struct DebateInput {
     pub proposal: String,
@@ -48,6 +53,7 @@ pub async fn run_debate(
     let mut used_ids: BTreeSet<CritiqueId> = BTreeSet::new();
     let mut critiques: BTreeMap<CritiqueId, Critique> = BTreeMap::new();
     let mut conceded: BTreeMap<CritiqueId, InferenceId> = BTreeMap::new();
+    let mut dropped: Vec<Closed> = Vec::new();
     let mut last_adversary: Option<AdversaryTurn> = None;
     let mut final_tree: Option<CheckedTree> = None;
     let mut ending = Ending::LimitReached;
@@ -94,15 +100,25 @@ pub async fn run_debate(
             .filter(|a| a.kind == AnswerKind::Reject)
             .map(|a| a.critique.clone())
             .collect();
+        let closing: Vec<Closed> = advocate_turn
+            .answers
+            .iter()
+            .filter(|a| a.kind == AnswerKind::Reject && matches!(a.ground, Some(Ground::Stated | Ground::Follows)))
+            .filter_map(|a| match &expected.get(&a.critique)?.target {
+                Target::Gap { inference } => Some((a.critique.clone(), inference.clone(), a.premises.clone())),
+                _ => None,
+            })
+            .collect();
+        let found = found_by_code(&checked.tree, &input.checks, &conceded, &dropped);
         let message = if round == 1 {
             format!(
-                "{}\n\n## The advocate's turn, round 1\n\n{}\n\nCritique the tree.",
+                "{}\n\n## The advocate's turn, round 1\n\n{}{found}\n\nCritique the tree.",
                 proposal_section(input),
                 pretty(&advocate_turn)
             )
         } else {
             format!(
-                "## The advocate's turn, round {round}\n\n{}\n\nRespond to the advocate's rejections, then critique the revised tree.",
+                "## The advocate's turn, round {round}\n\n{}{found}\n\nRespond to the advocate's rejections, then critique the revised tree.",
                 pretty(&advocate_turn)
             )
         };
@@ -118,6 +134,9 @@ pub async fn run_debate(
         final_tree = Some(checked);
         used_ids.extend(adversary_turn.critiques.iter().map(|c| c.id.clone()));
         critiques.extend(adversary_turn.critiques.iter().map(|c| (c.id.clone(), c.clone())));
+        for response in adversary_turn.responses.iter().filter(|r| r.action == ResponseAction::Drop) {
+            dropped.extend(closing.iter().filter(|(id, _, _)| *id == response.critique).cloned());
+        }
         let satisfied = adversary_turn.satisfied;
         record(Turn::Adversary { round, turn: adversary_turn.clone() }, raw, &mut turns);
         if satisfied {
@@ -129,6 +148,56 @@ pub async fn run_debate(
 
     let final_tree = final_tree.expect("at least one round ran");
     Ok(outcome(turns, final_tree, ending, rounds_run, input.round_limit))
+}
+
+/// The cases code found in the tree the adversary is about to critique, or nothing when there
+/// are none.
+fn found_by_code(tree: &Tree, rules: &CheckConfig, conceded: &BTreeMap<CritiqueId, InferenceId>, dropped: &[Closed]) -> String {
+    let mut items = Vec::new();
+    let unsupported = unsupported_conclusions(tree);
+    if !unsupported.is_empty() {
+        items.push(format!(
+            "- Unsupported conclusions: {}. If the proposal argues for one of them, give a reading critique that quotes where.",
+            unsupported.join(", ")
+        ));
+    }
+    let closed: BTreeSet<&str> = conceded.values().map(String::as_str).collect();
+    let candidates: Vec<String> = circular_candidates(tree, rules)
+        .into_iter()
+        .filter(|c| !closed.contains(c.inference.as_str()))
+        .map(|c| {
+            let kind = if tree.claims.iter().any(|claim| claim.id == c.premise && claim.is_added()) { "added" } else { "stated" };
+            format!(
+                "in {}, premise {} ({kind}) holds {:.0}% of the content words of conclusion {}",
+                c.inference,
+                c.premise,
+                c.share * 100.0,
+                c.conclusion
+            )
+        })
+        .collect();
+    if !candidates.is_empty() {
+        items.push(format!(
+            "- Circular candidates: {}. If a premise asserts its conclusion, give a circular critique.",
+            candidates.join("; ")
+        ));
+    }
+    if !conceded.is_empty() {
+        let listed: Vec<String> = conceded.iter().map(|(critique, inference)| format!("{inference} ({critique})")).collect();
+        items.push(format!("- Conceded inferences, which take only reading critiques: {}.", listed.join(", ")));
+    }
+    if !dropped.is_empty() {
+        let listed: Vec<String> =
+            dropped.iter().map(|(critique, inference, by)| format!("{critique} on {inference}, closed by {}", by.join(", "))).collect();
+        items.push(format!("- Critiques you dropped after a stated or follows rejection: {}.", listed.join("; ")));
+    }
+    if items.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n## Found by code\n\nCode found these cases. Judge each one, and raise a critique only where it meets the standard.\n\n{}",
+        items.join("\n")
+    )
 }
 
 fn proposal_section(input: &DebateInput) -> String {

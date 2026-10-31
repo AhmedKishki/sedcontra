@@ -43,7 +43,10 @@ stub_max_len = 2
 uncovered_min_words = 4
 
 # Word lists for the checks in SPEC.md, "The checks"; matching ignores case and takes whole words,
-# so both lists follow the language of the proposal.
+# so the lists follow the language of the proposal. circular_share flags a premise holding at least
+# that share of its conclusion's content words, the words not in stopwords.
 [checks]
 connectives = ["because", "therefore", "hence", "thus", "consequently"]
 qualifiers = ["not", "no", "never", "none", "nothing", "cannot", "can't", "don't", "doesn't", "isn't", "aren't", "won't", "may", "might", "can", "could", "must", "should", "seem", "seems", "appear", "appears", "suggest", "suggests", "perhaps", "probably", "possibly", "likely", "all", "every", "some", "most", "many", "few", "only", "always", "often", "usually", "generally"]
+circular_share = 0.8
+stopwords = ["a", "an", "the", "of", "to", "in", "on", "for", "and", "or", "but", "nor", "is", "are", "was", "were", "be", "been", "being", "it", "its", "this", "that", "these", "those", "as", "at", "by", "with", "from", "into", "onto", "upon", "about", "which", "who", "whom", "whose", "what", "when", "where", "how", "than", "then", "there", "their", "they", "them", "he", "she", "his", "her", "we", "our", "you", "your", "i", "me", "my", "if", "so", "do", "does", "did", "has", "have", "had", "will", "would", "shall", "should", "can", "could", "may", "might", "must", "not", "no", "also", "both", "either", "neither", "such", "only", "very", "same", "own", "one", "ones", "other", "others", "any", "all", "some", "more", "most", "much", "many", "each", "every"]

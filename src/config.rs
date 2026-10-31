@@ -56,6 +56,8 @@ pub struct AnalyzerConfig {
 pub struct CheckConfig {
     pub connectives: Vec<String>,
     pub qualifiers: Vec<String>,
+    pub circular_share: f64,
+    pub stopwords: Vec<String>,
 }
 
 impl CheckConfig {
