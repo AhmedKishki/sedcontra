@@ -1,7 +1,5 @@
 # Sed Contra: spec
 
-Status: requirements approved by the owner, 2026-10-30, and revised the same day with the names caller, advocate and adversary, the critique ledger, the superfluous-premise critique, the Argdown rendering and the Arguinas evaluation. Nothing is built yet.
-
 ## Why this exists
 
 An agent that writes a proposal draws every connection in it from its own model, so it has nothing outside itself to check those connections against. A connection it invented therefore reads exactly like one that holds. Text without any connection passes just as easily: a sentence that links to nothing, a conclusion announced before its argument, or a "not only X but also Y" where X and Y have no relation reads as fluently as an argument, and these are the marks of AI writing.
@@ -110,7 +108,7 @@ The report comes in three renderings of the same data: markdown for an agent or 
 
 ### Structural findings
 
-The findings take over what the owner first planned as a separate prune function. Each finding is computed in code by an analyzer that reads the final tree and the proposal, without a model call. They run on the final tree, so any misreading the adversary caught is already corrected.
+Each finding is computed in code by an analyzer that reads the final tree and the proposal, without a model call. They run on the final tree, so any misreading the adversary caught is already corrected.
 
 - **Restatement.** The report quotes every place of the claim and suggests keeping one. A conclusion announced before its argument shows up here, because the advocate records the announcement and the final statement as one claim.
 - **Uncovered text.** The report quotes each stretch of the proposal that no place covers as a candidate for cutting. Stretches shorter than a configured minimum, 4 words by default, are ignored.
@@ -126,11 +124,11 @@ Both front ends are thin layers over the same core and write the same run record
 - One tool, `videtur_quod`, with two fields:
   - `proposal` (string, required): the text to cross-examine;
   - `context` (string, optional): what the caller needs the proposal for and any evidence it already has.
-- The call waits until the report is ready, as the owner decided. When the client supplies a progress token, the server sends a progress notification after every turn, so the client sees the run advancing.
+- The call waits until the report is ready. When the client supplies a progress token, the server sends a progress notification after every turn, so the client sees the run advancing.
 - The result carries the markdown report as text content and the JSON report as structured content.
 - A failed run returns an error result with the reason and every completed turn.
 - A cancelled request stops the run. MCP sends no result for a cancelled request, so the completed turns remain only in the run record.
-- A client whose tool-call time limit is shorter than a debate cuts the call off, and such a client should use the command line. `rmcp` also implements MCP's tasks extension, which lets a call return at once and deliver its result later; it is a later option and stays out of the first build.
+- A client whose tool-call time limit is shorter than a debate cuts the call off, and such a client should use the command line. `rmcp` also implements MCP's tasks extension, which lets a call return at once and deliver its result later, but the server does not use it.
 
 #### Command line
 
@@ -141,11 +139,11 @@ Both front ends are thin layers over the same core and write the same run record
 
 ### Run record
 
-Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), the status (running, done, failed or cancelled) and the report in every rendering. Because every turn is written when it completes, a later checkpoint-and-resume feature can restart a run from its last turn.
+Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), the status (running, done, failed or cancelled) and the report in every rendering. Because every turn is written when it completes, a checkpoint-and-resume feature could restart a run from its last turn.
 
 ### The core and the swappable parts
 
-The owner wants every decision in this spec to stay changeable without rewriting the core. The core is built first:
+Every decision in this spec can change without a rewrite of the core, which holds:
 
 - the data model: proposal, claims, inferences, places, tree, counter-proposals, answers, turns and report;
 - the debate loop, with its turn order, completeness checks, early stop and round limit;
@@ -153,7 +151,7 @@ The owner wants every decision in this spec to stay changeable without rewriting
 
 Every other part sits behind one interface, so it can be replaced, and new parts of the same kind can be added alongside:
 
-| Part | First implementation |
+| Part | Implementation |
 | --- | --- |
 | Model provider | a client for OpenAI-format chat APIs, configured for DeepSeek |
 | Agent prompts | one Markdown file each for the advocate and the adversary, holding only the prompt |
@@ -166,7 +164,7 @@ Agent definitions are looked up in layers, as in [pi-interactive-subagents](http
 
 ### Model access
 
-- The first provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from a key file that `sedcontra key set <provider>` writes with mode 600, `~/.config/sedcontra/keys/<provider>` by default, and the tool refuses a key file other users can read. The environment variable named in the configuration, `DEEPSEEK_API_KEY` by default, is a fallback for CI, read only when no key file exists.
+- The default provider is DeepSeek, through its OpenAI-format API at `https://api.deepseek.com`. The default model is `deepseek-flash`, the cheap one, since the owner prefers a cheap model; `deepseek-v4-pro` is the alternative. The API key comes from a key file that `sedcontra key set <provider>` writes with mode 600, `~/.config/sedcontra/keys/<provider>` by default, and the tool refuses a key file other users can read. The environment variable named in the configuration, `DEEPSEEK_API_KEY` by default, is a fallback for CI, read only when no key file exists.
 - The key must never reach a model. It travels only in the HTTP `Authorization` header and never enters a prompt, and every provider error is redacted and shortened before it can reach a report, an MCP result, stderr or the run record.
 - The advocate and the adversary return structured data for the orchestrator to check, so every turn requests DeepSeek's JSON output mode, `response_format: {"type": "json_object"}`. The mode requires the prompt to mention JSON and show an example of the structure. It can also return blank content when the model's output was not valid JSON, so the provider retries a blank or unparsable reply twice before the turn fails.
 - A reply that reaches `max_tokens` is not a failure. The cut-off reply stays in the agent's history, the agent is told to stop deliberating and give its decision now, and only a second cut-off in the same turn fails the run.
@@ -215,7 +213,7 @@ The first tree states what the text says, so a low share of implicit premises th
 - Judging the order of the proposal's text. The tree is rebuilt in logical order, and the restatement finding catches a conclusion stated before its argument.
 - A separate prune function. Prune suggestions are part of the report.
 - Retrieval or evidence gathering by the advocate or the adversary.
-- Checkpoint and resume in the first build. The run record prepares for them.
+- Checkpoint and resume. The run record prepares for them.
 
 ## Anti-goals
 
