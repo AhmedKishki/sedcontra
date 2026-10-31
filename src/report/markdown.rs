@@ -319,26 +319,6 @@ fn render_findings(out: &mut String, findings: &[Finding], tree: &Tree) {
         let _ = writeln!(out, "- **{id}** {}: {places}", text_of(id));
     }
     out.push('\n');
-
-    let _ = writeln!(out, "### Circular candidates\n");
-    let circular: Vec<_> = findings
-        .iter()
-        .filter_map(|f| match f {
-            Finding::Circular { inference, premise, conclusion, share } => Some((inference, premise, conclusion, share)),
-            _ => None,
-        })
-        .collect();
-    if circular.is_empty() {
-        let _ = writeln!(out, "None.");
-    }
-    for (inference, premise, conclusion, share) in circular {
-        let _ = writeln!(
-            out,
-            "- **{premise}** in {inference} holds {:.0}% of the content words of {conclusion}",
-            share * 100.0
-        );
-    }
-    out.push('\n');
 }
 
 pub fn render_transcript(turns: &[Turn]) -> String {

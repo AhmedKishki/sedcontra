@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use sedcontra::actor::spawn_agent;
 use sedcontra::agents::AgentDef;
-use sedcontra::config::{CheckConfig, ModelSettings};
+use sedcontra::config::ModelSettings;
 use sedcontra::debate::{DebateInput, run_debate};
 use sedcontra::model::{CritiqueStatus, DebateOutcome, Effect, Ending};
 use sedcontra::provider::{ModelProvider, ScriptedProvider};
@@ -42,7 +42,7 @@ async fn debate(provider: &Arc<ScriptedProvider>, round_limit: u32) -> DebateOut
     let dynamic: Arc<dyn ModelProvider> = provider.clone();
     let advocate = spawn_agent(def("advocate"), dynamic.clone());
     let adversary = spawn_agent(def("adversary"), dynamic);
-    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit, retries: 1, checks: CheckConfig::bundled() };
+    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit, retries: 1 };
     run_debate(&input, &advocate, &adversary, None, &CancellationToken::new())
         .await
         .unwrap_or_else(|e| panic!("debate failed: {}", e.reason))
@@ -130,7 +130,7 @@ async fn cancelled_before_start_calls_no_model() {
         let dynamic: Arc<dyn ModelProvider> = p.clone();
         let advocate = spawn_agent(def("advocate"), dynamic.clone());
         let adversary = spawn_agent(def("adversary"), dynamic);
-        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2, retries: 1, checks: CheckConfig::bundled() };
+        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2, retries: 1 };
         let cancel = CancellationToken::new();
         cancel.cancel();
         let err = run_debate(&input, &advocate, &adversary, None, &cancel).await.expect_err("cancelled");
@@ -287,7 +287,7 @@ async fn debate_with_retries(provider: &Arc<ScriptedProvider>, retries: u32) -> 
     let dynamic: Arc<dyn ModelProvider> = provider.clone();
     let advocate = spawn_agent(def("advocate"), dynamic.clone());
     let adversary = spawn_agent(def("adversary"), dynamic);
-    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 1, retries, checks: CheckConfig::bundled() };
+    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 1, retries };
     run_debate(&input, &advocate, &adversary, None, &CancellationToken::new()).await.map_err(|e| e.reason)
 }
 

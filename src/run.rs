@@ -130,7 +130,6 @@ pub async fn cross_examine(
         context,
         round_limit: env.config.round_limit(),
         retries: env.config.retry_limit(),
-        checks: env.config.checks.clone(),
     };
     let result = run_debate(&input, &advocate, &adversary, Some(&tx), &cancel).await;
     drop(tx);
@@ -138,7 +137,7 @@ pub async fn cross_examine(
 
     match result {
         Ok(outcome) => {
-            let findings = default_analyzers(&env.config.analyzers, &env.config.checks)
+            let findings = default_analyzers(&env.config.analyzers)
                 .iter()
                 .flat_map(|a| a.analyze(&proposal, &outcome.final_tree))
                 .collect();

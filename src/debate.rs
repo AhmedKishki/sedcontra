@@ -7,10 +7,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::actor::AgentHandle;
-use crate::check::{
-    QuoteIndex, check_adversary_turn, check_advocate_turn, circular_candidates, diff_trees, touches, unsupported_conclusions,
-};
-use crate::config::CheckConfig;
+use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn, diff_trees, touches, unsupported_conclusions};
 use crate::model::{
     AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, ClaimId, Critique, CritiqueId,
     CritiqueStatus, DebateOutcome, Effect, Ending, Ground, InferenceId, LedgerRow, OpenCritique, ResponseAction,
@@ -27,7 +24,6 @@ pub struct DebateInput {
     pub round_limit: u32,
     /// How often a turn the checks refuse is sent back with its failures.
     pub retries: u32,
-    pub checks: CheckConfig,
 }
 
 pub struct TurnEvent {
@@ -116,7 +112,7 @@ pub async fn run_debate(
         let previous = final_tree.as_ref();
         let ((advocate_turn, checked), raw) = take_turn(advocate, message, cancel, &turns, attempts(round, "advocate", turns.len() as u32 + 1), |value| {
             let turn: AdvocateTurn = shaped(value)?;
-            check_advocate_turn(&index, &input.checks, turn, round, &expected, previous)
+            check_advocate_turn(&index, turn, round, &expected, previous)
         })
         .await?;
         for answer in advocate_turn.answers.iter().filter(|a| a.kind == AnswerKind::Concede) {
@@ -139,7 +135,7 @@ pub async fn run_debate(
                 _ => None,
             })
             .collect();
-        let found = found_by_code(&checked.tree, &input.checks, &conceded, &dropped);
+        let found = found_by_code(&checked.tree, &conceded, &dropped);
         let message = if round == 1 {
             format!(
                 "{}\n\n## The advocate's turn, round 1\n\n{}{found}\n\nCritique the tree.",
@@ -182,34 +178,13 @@ pub async fn run_debate(
 
 /// The cases code found in the tree the adversary is about to critique, or nothing when there
 /// are none.
-fn found_by_code(tree: &Tree, rules: &CheckConfig, conceded: &BTreeMap<CritiqueId, InferenceId>, dropped: &[Closed]) -> String {
+fn found_by_code(tree: &Tree, conceded: &BTreeMap<CritiqueId, InferenceId>, dropped: &[Closed]) -> String {
     let mut items = Vec::new();
     let unsupported = unsupported_conclusions(tree);
     if !unsupported.is_empty() {
         items.push(format!(
             "- Unsupported conclusions: {}. If the proposal argues for one of them, give a reading critique that quotes where.",
             unsupported.join(", ")
-        ));
-    }
-    let closed: BTreeSet<&str> = conceded.values().map(String::as_str).collect();
-    let candidates: Vec<String> = circular_candidates(tree, rules)
-        .into_iter()
-        .filter(|c| !closed.contains(c.inference.as_str()))
-        .map(|c| {
-            let kind = if tree.claims.iter().any(|claim| claim.id == c.premise && claim.is_added()) { "added" } else { "stated" };
-            format!(
-                "in {}, premise {} ({kind}) holds {:.0}% of the content words of conclusion {}",
-                c.inference,
-                c.premise,
-                c.share * 100.0,
-                c.conclusion
-            )
-        })
-        .collect();
-    if !candidates.is_empty() {
-        items.push(format!(
-            "- Circular candidates: {}. If a premise asserts its conclusion, give a circular critique.",
-            candidates.join("; ")
         ));
     }
     if !conceded.is_empty() {
@@ -237,10 +212,8 @@ fn proposal_section(input: &DebateInput) -> String {
 
 fn first_advocate_message(input: &DebateInput) -> String {
     format!(
-        "{}\n\n## What the checks require\n\nThe first tree carries no origins: every claim and inference in it, including one you add after a failed check, is something the proposal says. Each place quotes at most one sentence and may quote only part of one: when one sentence states both a premise and its conclusion, give each its own part, since a premise and its conclusion may not quote the same words. These words are connectives, and each occurrence must lie within the place of an inference: {}. These words are qualifiers, and a claim keeps every one its places contain: {}.\n\nBuild the tree.",
-        proposal_section(input),
-        input.checks.connectives.join(", "),
-        input.checks.qualifiers.join(", ")
+        "{}\n\n## What the checks require\n\nThe first tree carries no origins: every claim and inference in it, including one you add after a failed check, is something the proposal says. A place may quote only part of a sentence: when one sentence states both a premise and its conclusion, give each its own part, since a premise and its conclusion may not quote the same words.\n\nBuild the tree.",
+        proposal_section(input)
     )
 }
 

@@ -30,7 +30,6 @@ The structure the advocate builds is a directed graph without cycles. This spec 
 | Reported inference | An inference the proposal sets out without drawing it in its own voice: it attributes the inference to someone else or sets it out in order to reject it. |
 | Conceded inference | An inference the advocate concedes to fail as the proposal draws it, in answer to a gap or circular critique. |
 | Place | An exact quote from the proposal that states a claim or an inference. |
-| Connective | A word from a configured list, such as "because" or "thus", that marks an inference in the proposal. |
 | Root | A claim that no inference concludes: a premise the argument starts from. |
 | Leaf | A claim that no inference uses as a premise. |
 | Conclusion | A claim the advocate marks as what the proposal argues for. |
@@ -59,7 +58,7 @@ The advocate's first turn turns the proposal into a tree.
 1. The advocate reads every paragraph, sentence and phrase and identifies the substantive claims. Wording that carries no claim and no connection yields nothing. Each claim states one assertion and keeps the proposal's negation, modal and quantifier words, so that a paraphrase cannot drop a "not", a "may" or a "some".
 2. It identifies the inferences between claims and records them in logical order, whatever order the text uses: "X because Y" becomes `Y → X`. The tree is therefore in logical order by construction, and nothing judges the order of the text itself.
 3. It marks the conclusion or conclusions the proposal argues for.
-4. It records every place that states each claim, and each place quotes at most one sentence. For each inference it records the place that states the connection, such as the "because", when the text states one. Every connective in the proposal is the place of some inference, since a connective marks an inference the proposal draws.
+4. It records every place that states each claim. For each inference it records the place that states the connection, such as the "because", when the text states one.
 5. It flags an inference as reported when the proposal does not draw it in its own voice, so that the debate tests the proposal's own argument.
 6. It stays faithful to the caller. The first tree records the connections the proposal draws, including weak ones, and adds nothing the proposal did not say. Repair happens only in the debate, where every change traces back to a counter-proposal.
 
@@ -99,7 +98,7 @@ Every turn sees the proposal, the caller's context and every earlier turn of the
 
 ### The checks
 
-Code decides whatever it can decide without judging meaning, so that neither agent has to notice it. Where finding a case needs no meaning but judging it does, code finds the case, the orchestrator lists it in the adversary's next message, and the report shows it. The agents judge only what meaning settles, such as whether a case defeats an inference, a derivation holds or a reading is right.
+Code checks the tree, whose parts have a defined meaning: claims, inferences, ids, origins, flags and the positions of quotes. It never interprets the proposal's language, so it keeps no word lists and does not parse sentences; it treats the proposal as a string in which it locates each quote. Whatever depends on what the words mean is left to the agents, such as whether a case defeats an inference, a derivation holds or a reading is right. Where code finds a case in the tree that only meaning can judge, the orchestrator lists it in the adversary's next message, and the report shows it.
 
 Every tree the advocate submits passes these checks:
 
@@ -107,10 +106,7 @@ Every tree the advocate submits passes these checks:
 - no path loops back on itself;
 - every place occurs in the proposal word for word, with whitespace normalised, and the orchestrator records where;
 - every claim has a place, or an origin as an added claim, and the first tree has no added claims and no origins;
-- a claim's place quotes at most one sentence: it crosses no sentence end, paragraph break or start of a list item, where a sentence end is a ".", "!" or "?" followed by whitespace and a capital letter;
-- every occurrence of a connective in the proposal lies within the place of an inference;
 - no premise's place overlaps a place of its inference's conclusion;
-- a stated claim's text contains every word from the configured list of negation, modal and quantifier words that its places contain;
 - every inference has at least one stated premise.
 
 The orchestrator compares each revised tree with the previous one, so that every change traces back to a critique answered in the same turn. A critique *touches* an inference when it targets the inference, when it is a reading critique on the inference or on one of its claims, or when the inference is new and names the critique as its origin.
@@ -148,11 +144,8 @@ A turn that fails a check gets the list of failures and another attempt, up to a
 Code finds these cases for the adversary to judge:
 
 - an unsupported conclusion, as a candidate for a connection the tree leaves out;
-- a circular candidate: a premise that holds at least a configured share, 0.8 by default, of its conclusion's content words, which are the words outside a configured list of stopwords. It stays a candidate and is never refused, because a conditional whose consequent is the conclusion holds the conclusion's words by nature, and telling such a conditional from a restatement depends on its logical form, which only meaning settles;
 - a conceded inference, which takes only reading critiques;
 - a critique dropped after a rejection on the stated or follows ground, with the claims that closed it.
-
-The connectives, the qualifier words, the share and the stopwords live in the configuration, so they can follow the language of the proposal.
 
 ### What the report contains
 
@@ -184,7 +177,6 @@ Each finding is computed in code by an analyzer that reads the final tree and th
 - **Uncovered text.** The report quotes each stretch of the proposal that no place covers as a candidate for cutting. Stretches shorter than a configured minimum, 4 words by default, are ignored.
 - **Stub.** The report lists each stub with its claims and places. A stub no longer than a configured threshold, 2 claims by default, is marked as a prune suggestion; a longer one is reported as a separate line of argument.
 - **Unsupported conclusion.** The report lists each unsupported conclusion with its places. The proposal asserts it without an argument the tree records, either from the start or because the debate removed the inference that concluded it.
-- **Circular candidate.** The report lists each circular candidate in the final tree with its share of the conclusion's content words, as a premise to check for restating its conclusion.
 
 ### Front ends
 
@@ -228,11 +220,11 @@ Every other part sits behind one interface, so it can be replaced, and new parts
 | Model provider | a client for OpenAI-format chat APIs, configured for DeepSeek |
 | Agent prompts | one Markdown file each for the advocate and the adversary, holding only the prompt |
 | Critique standard | explanatory-critique, in its own file that both prompts include |
-| Analyzers | restatement, uncovered text, stub, unsupported conclusion, circular candidate |
+| Analyzers | restatement, uncovered text, stub, unsupported conclusion |
 | Front ends | MCP server, command line |
 | Report renderers | markdown, JSON, Argdown |
 
-Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns each agent its model in its own `[models.<agent>]` table. The advocate and the adversary both default to `deepseek-flash`, and either can run on a different model or provider without touching the other. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the retry count, the lists and thresholds that the checks and analyzers use, and the runs directory.
+Agent definitions are looked up in layers, as in [pi-interactive-subagents](https://github.com/amosblomqvist/pi-interactive-subagents): a project's file overrides the user's, and the user's overrides the default compiled into the binary. The agents are independent of the provider: a prompt names no provider and no model. The configuration assigns each agent its model in its own `[models.<agent>]` table. The advocate and the adversary both default to `deepseek-flash`, and either can run on a different model or provider without touching the other. The built-in defaults live in a bundled configuration file rather than in code, and a user's file overrides them table by table; it also holds the provider settings, the round limit, the retry count, the thresholds that the analyzers use, and the runs directory.
 
 ### Model access
 

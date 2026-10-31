@@ -1,19 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use sedcontra::check::{QuoteIndex, check_adversary_turn, check_advocate_turn, check_revision, check_tree};
-use sedcontra::config::CheckConfig;
 use sedcontra::model::{AdversaryTurn, AdvocateTurn, Answer, CheckedTree, Claim, Critique, Inference, Origin, Tree};
-
-fn no_lists() -> CheckConfig {
-    lists(&[], &[])
-}
-
-fn lists(connectives: &[&str], qualifiers: &[&str]) -> CheckConfig {
-    let mut rules = CheckConfig::bundled();
-    rules.connectives = connectives.iter().map(|w| w.to_string()).collect();
-    rules.qualifiers = qualifiers.iter().map(|w| w.to_string()).collect();
-    rules
-}
 
 fn claim(id: &str, places: &[&str]) -> Claim {
     Claim {
@@ -41,7 +29,7 @@ fn tree(claims: Vec<Claim>, inferences: Vec<Inference>, conclusions: &[&str]) ->
 }
 
 fn errors_of(proposal: &str, t: Tree) -> Vec<String> {
-    check_tree(&QuoteIndex::new(proposal), &no_lists(), t).expect_err("expected the check to fail")
+    check_tree(&QuoteIndex::new(proposal), t).expect_err("expected the check to fail")
 }
 
 const ABC: &str = "A holds. B holds. C holds. Q holds. X holds. Y holds. Z holds.";
@@ -83,7 +71,7 @@ fn missing_place_fails_with_quote_in_message() {
 fn duplicate_places_take_distinct_occurrences() {
     let p = "Z holds. A is true, so Z holds.";
     let idx = QuoteIndex::new(p);
-    let ok = check_tree(&idx, &no_lists(), tree(vec![claim("C1", &["Z holds", "Z holds"])], vec![], &["C1"]))
+    let ok = check_tree(&idx, tree(vec![claim("C1", &["Z holds", "Z holds"])], vec![], &["C1"]))
         .expect("two places, two occurrences");
     let spans = &ok.claim_spans["C1"];
     assert_eq!(spans.len(), 2);
@@ -123,7 +111,7 @@ fn merging_trees_pass() {
         vec![inf("I1", &["X"], "Q"), inf("I2", &["Y"], "Q"), inf("I3", &["Q"], "Z")],
         &["Z"],
     );
-    assert!(check_tree(&QuoteIndex::new(ABC), &no_lists(), t).is_ok());
+    assert!(check_tree(&QuoteIndex::new(ABC), t).is_ok());
 }
 
 #[test]
@@ -148,7 +136,7 @@ fn added_claim_without_place_passes() {
         vec![inf("I1", &["C1", "C2"], "C3")],
         &["C3"],
     );
-    assert!(check_tree(&QuoteIndex::new(ABC), &no_lists(), t).is_ok());
+    assert!(check_tree(&QuoteIndex::new(ABC), t).is_ok());
 }
 
 #[test]
@@ -169,7 +157,7 @@ fn base() -> CheckedTree {
         vec![inf("I1", &["C1", "C2"], "C3")],
         &["C3"],
     );
-    check_tree(&QuoteIndex::new(ABC), &no_lists(), t).expect("the base tree passes the checks")
+    check_tree(&QuoteIndex::new(ABC), t).expect("the base tree passes the checks")
 }
 
 fn critique(json: &str) -> Critique {
@@ -179,7 +167,7 @@ fn critique(json: &str) -> Critique {
 fn advocate_errors(turn: &str, round: u32, expected: &[Critique], previous: Option<&CheckedTree>) -> Vec<String> {
     let turn: AdvocateTurn = serde_json::from_str(turn).unwrap();
     let expected: BTreeMap<String, Critique> = expected.iter().map(|c| (c.id.clone(), c.clone())).collect();
-    check_advocate_turn(&QuoteIndex::new(ABC), &no_lists(), turn, round, &expected, previous).err().unwrap_or_default()
+    check_advocate_turn(&QuoteIndex::new(ABC), turn, round, &expected, previous).err().unwrap_or_default()
 }
 
 fn adversary_errors(turn: &str, tree: &CheckedTree, conceded: &[(&str, &str)]) -> Vec<String> {
@@ -243,12 +231,12 @@ fn stated_rejection_needs_named_premises_in_the_inference() {
 
 #[test]
 fn rejection_premise_errors_arrive_with_tree_errors() {
-    let claims = r#"{"id": "C1", "text": "A", "places": ["A holds. B holds"]},
+    let claims = r#"{"id": "C1", "text": "A", "places": ["A fails"]},
         {"id": "C2", "text": "B", "places": ["B holds"]},
         {"id": "C3", "text": "C", "places": ["C holds"]}"#;
     let answer = r#"{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "r", "quotes": ["A holds"], "premises": ["C3"]}"#;
     let errs = advocate_errors(&round_two(answer, claims, r#"["C1", "C2"]"#), 2, &[critique(GAP_K1)], Some(&base()));
-    assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("does not occur in the proposal")), "{errs:?}");
     assert!(errs.iter().any(|e| e.contains("C3 is not a premise of I1")), "{errs:?}");
 }
 
@@ -284,7 +272,7 @@ fn superfluous_that_leaves_only_added_premises_is_refused() {
         vec![inf("I1", &["C1", "C9"], "C3")],
         &["C3"],
     );
-    let t = check_tree(&QuoteIndex::new(ABC), &no_lists(), t).expect("the tree passes the checks");
+    let t = check_tree(&QuoteIndex::new(ABC), t).expect("the tree passes the checks");
     let turn = r#"{"critiques": [{"id": "K10", "kind": "superfluous", "inference": "I1", "premise": "C1", "point": "p", "support": "s"}], "satisfied": false}"#;
     let errs = adversary_errors(turn, &t, &[]);
     assert!(errs.iter().any(|e| e.contains("would leave only premises the advocate added")), "{errs:?}");
@@ -304,94 +292,13 @@ fn response_to_conceded_critique_is_refused() {
     assert!(errs.iter().any(|e| e.contains("K1 was conceded, so it takes no response")), "{errs:?}");
 }
 
-fn errors_with(proposal: &str, rules: &CheckConfig, t: Tree) -> Vec<String> {
-    check_tree(&QuoteIndex::new(proposal), rules, t).err().unwrap_or_default()
+fn errors_with(proposal: &str, t: Tree) -> Vec<String> {
+    check_tree(&QuoteIndex::new(proposal), t).err().unwrap_or_default()
 }
 
 fn cites(mut inference: Inference, places: &[&str]) -> Inference {
     inference.places = places.iter().map(|p| p.to_string()).collect();
     inference
-}
-
-fn says(mut claim: Claim, text: &str) -> Claim {
-    claim.text = text.into();
-    claim
-}
-
-fn one_claim(place: &str) -> Tree {
-    tree(vec![claim("C1", &[place])], vec![], &["C1"])
-}
-
-#[test]
-fn place_crossing_a_sentence_fails() {
-    let errs = errors_with("A holds. B holds.", &no_lists(), one_claim("A holds. B holds"));
-    assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
-}
-
-#[test]
-fn place_ending_with_its_full_stop_passes() {
-    assert_eq!(errors_with("A holds. B holds.", &no_lists(), one_claim("A holds.")), Vec::<String>::new());
-}
-
-#[test]
-fn abbreviation_before_lowercase_passes() {
-    let p = "It runs as in e.g. the case of B.";
-    assert_eq!(errors_with(p, &no_lists(), one_claim("as in e.g. the case")), Vec::<String>::new());
-}
-
-#[test]
-fn place_crossing_a_list_item_fails() {
-    let errs = errors_with("- A holds\n- B holds", &no_lists(), one_claim("A holds - B holds"));
-    assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
-}
-
-#[test]
-fn place_crossing_a_paragraph_fails() {
-    let errs = errors_with("A holds\n\nB holds", &no_lists(), one_claim("A holds B holds"));
-    assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
-}
-
-fn thus_tree(places: &[&str]) -> Tree {
-    tree(
-        vec![claim("C1", &["A holds"]), claim("C2", &["B holds"])],
-        vec![cites(inf("I1", &["C1"], "C2"), places)],
-        &["C2"],
-    )
-}
-
-#[test]
-fn uncited_connective_fails() {
-    let errs = errors_with("A holds, thus B holds.", &lists(&["thus"], &[]), thus_tree(&[]));
-    assert!(errs.iter().any(|e| e.contains("the connective \"thus\"")), "{errs:?}");
-}
-
-#[test]
-fn cited_connective_passes() {
-    let errs = errors_with("A holds, thus B holds.", &lists(&["thus"], &[]), thus_tree(&["thus"]));
-    assert_eq!(errs, Vec::<String>::new());
-}
-
-#[test]
-fn capitalised_connective_counts() {
-    let errs = errors_with("A holds. Thus B holds.", &lists(&["thus"], &[]), thus_tree(&[]));
-    assert!(errs.iter().any(|e| e.contains("the connective \"Thus\"")), "{errs:?}");
-}
-
-#[test]
-fn connective_inside_a_longer_word_is_ignored() {
-    let errs = errors_with("A holds henceforth.", &lists(&["hence"], &[]), one_claim("A holds henceforth"));
-    assert_eq!(errs, Vec::<String>::new());
-}
-
-#[test]
-fn repeated_connective_cited_once_per_inference() {
-    let p = "Streets are wet because rain fell. Crops grew because rain fell.";
-    let t = tree(
-        vec![claim("C1", &["Streets are wet"]), claim("C2", &["rain fell", "rain fell"]), claim("C3", &["Crops grew"])],
-        vec![cites(inf("I1", &["C2"], "C1"), &["because"]), cites(inf("I2", &["C2"], "C3"), &["because"])],
-        &["C1", "C3"],
-    );
-    assert_eq!(errors_with(p, &lists(&["because"], &[]), t), Vec::<String>::new());
 }
 
 #[test]
@@ -406,7 +313,7 @@ fn repeated_conclusion_words_do_not_overlap() {
         vec![cites(inf("I1", &["C1", "C2"], "C3"), &["Therefore"])],
         &["C3"],
     );
-    assert_eq!(errors_with(p, &no_lists(), t), Vec::<String>::new());
+    assert_eq!(errors_with(p, t), Vec::<String>::new());
 }
 
 #[test]
@@ -416,26 +323,8 @@ fn premise_and_conclusion_sharing_words_fail() {
         vec![cites(inf("I1", &["C2"], "C1"), &["because"])],
         &["C1"],
     );
-    let errs = errors_with("A holds because B holds.", &no_lists(), t);
+    let errs = errors_with("A holds because B holds.", t);
     assert!(errs.iter().any(|e| e.contains("quote the same words")), "{errs:?}");
-}
-
-#[test]
-fn dropped_qualifier_fails() {
-    let t = tree(vec![says(claim("C1", &["B may hold"]), "B holds")], vec![], &["C1"]);
-    let errs = errors_with("B may hold.", &lists(&[], &["may"]), t);
-    assert!(errs.iter().any(|e| e.contains("\"may\"")), "{errs:?}");
-}
-
-#[test]
-fn qualifier_check_ignores_case_and_curly_apostrophes() {
-    let p = "It doesn’t hold.";
-    let rules = lists(&[], &["Doesn't"]);
-    let kept = tree(vec![says(claim("C1", &["It doesn’t hold"]), "It doesn't hold")], vec![], &["C1"]);
-    assert_eq!(errors_with(p, &rules, kept), Vec::<String>::new());
-    let dropped = tree(vec![says(claim("C1", &["It doesn’t hold"]), "It holds")], vec![], &["C1"]);
-    let errs = errors_with(p, &rules, dropped);
-    assert!(errs.iter().any(|e| e.contains("\"doesn't\"")), "{errs:?}");
 }
 
 #[test]
@@ -443,22 +332,22 @@ fn inference_on_added_premises_only_fails() {
     let mut c9 = claim("C9", &[]);
     c9.origin = Some(Origin { round: 2, critique: "K1".into() });
     let t = tree(vec![claim("C1", &["A holds"]), c9, claim("C3", &["C holds"])], vec![inf("I1", &["C9"], "C3")], &["C3"]);
-    let errs = errors_with(ABC, &no_lists(), t);
+    let errs = errors_with(ABC, t);
     assert!(errs.iter().any(|e| e.contains("rests only on premises the advocate added")), "{errs:?}");
 }
 
 #[test]
 fn all_failures_reported_in_one_pass() {
-    let p = "A holds. B may hold, thus C holds.";
+    let p = "A holds because B holds.";
     let t = tree(
-        vec![says(claim("C1", &["A holds. B may hold"]), "A and B hold"), claim("C3", &["C holds"])],
-        vec![inf("I1", &["C1"], "C3")],
-        &["C3"],
+        vec![claim("C1", &["A holds because B holds"]), claim("C2", &["B holds"]), claim("C3", &["Z holds"])],
+        vec![inf("I1", &["C2"], "C1"), inf("I2", &["C7"], "C3")],
+        &["C1"],
     );
-    let errs = errors_with(p, &lists(&["thus"], &["may"]), t);
-    assert!(errs.iter().any(|e| e.contains("runs past a sentence end")), "{errs:?}");
-    assert!(errs.iter().any(|e| e.contains("the connective \"thus\"")), "{errs:?}");
-    assert!(errs.iter().any(|e| e.contains("\"may\"")), "{errs:?}");
+    let errs = errors_of(p, t);
+    assert!(errs.iter().any(|e| e.contains("quote the same words")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("does not occur in the proposal")), "{errs:?}");
+    assert!(errs.iter().any(|e| e.contains("unknown claim C7")), "{errs:?}");
 }
 
 fn added(id: &str, critique: &str) -> Claim {

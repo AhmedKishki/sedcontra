@@ -1,16 +1,6 @@
-use sedcontra::analyze::{
-    Analyzer, Circular, ConclusionSupport, Finding, Restatement, Stubs, Uncovered, Unsupported, conclusion_support,
-};
-use sedcontra::check::{CircularCandidate, QuoteIndex, check_tree, circular_candidates, unsupported_conclusions};
-use sedcontra::config::CheckConfig;
+use sedcontra::analyze::{Analyzer, ConclusionSupport, Finding, Restatement, Stubs, Uncovered, Unsupported, conclusion_support};
+use sedcontra::check::{QuoteIndex, check_tree, unsupported_conclusions};
 use sedcontra::model::{CheckedTree, Claim, CritiqueStatus, Inference, LedgerRow, Origin, Tree};
-
-fn no_lists() -> CheckConfig {
-    let mut rules = CheckConfig::bundled();
-    rules.connectives.clear();
-    rules.qualifiers.clear();
-    rules
-}
 
 fn claim(id: &str, places: &[&str]) -> Claim {
     Claim {
@@ -35,7 +25,7 @@ fn inf(id: &str, premises: &[&str], conclusion: &str, places: &[&str]) -> Infere
 
 fn checked(proposal: &str, claims: Vec<Claim>, inferences: Vec<Inference>, conclusions: &[&str]) -> CheckedTree {
     let tree = Tree { claims, inferences, conclusions: conclusions.iter().map(|c| c.to_string()).collect() };
-    check_tree(&QuoteIndex::new(proposal), &no_lists(), tree).expect("test tree must pass the checks")
+    check_tree(&QuoteIndex::new(proposal), tree).expect("test tree must pass the checks")
 }
 
 fn stubs(findings: Vec<Finding>) -> Vec<(Vec<String>, bool)> {
@@ -142,12 +132,6 @@ fn unused_conclusion_of_argument_is_stub() {
     assert_eq!(stubs(Stubs { max_len: 2 }.analyze(LETTERS, &t)), vec![(vec!["S".to_string()], true)]);
 }
 
-fn says(id: &str, text: &str) -> Claim {
-    let mut c = claim(id, &[]);
-    c.text = text.into();
-    c
-}
-
 fn reported(mut inference: Inference) -> Inference {
     inference.reported = true;
     inference
@@ -168,59 +152,9 @@ fn unsupported_conclusion_ignores_reported_support() {
 }
 
 #[test]
-fn circular_candidate_finds_a_restated_conclusion() {
-    let t = plain(
-        vec![
-            says("C1", "prices change hourly"),
-            says("C9", "the cache serves fresh prices to the dashboard"),
-            says("C3", "the cache serves fresh prices to every dashboard"),
-        ],
-        vec![inf("I1", &["C1", "C9"], "C3", &[])],
-        &["C3"],
-    );
-    let found = circular_candidates(&t, &CheckConfig::bundled());
-    assert_eq!(
-        found,
-        vec![CircularCandidate { inference: "I1".into(), premise: "C9".into(), conclusion: "C3".into(), share: 1.0 }]
-    );
-}
-
-#[test]
-fn circular_candidate_ignores_stopwords_and_threshold() {
-    let t = plain(
-        vec![says("C1", "it is the one"), says("C2", "the cache persists"), says("C3", "the cache is warm")],
-        vec![inf("I1", &["C1", "C2"], "C3", &[])],
-        &["C3"],
-    );
-    assert_eq!(circular_candidates(&t, &CheckConfig::bundled()), Vec::<CircularCandidate>::new());
-}
-
-#[test]
 fn unsupported_analyzer_reports_conclusion_without_inference() {
     let t = checked(LETTERS, vec![claim("X", &["X holds"]), claim("Z", &["Z holds"])], vec![], &["Z"]);
     assert_eq!(Unsupported.analyze(LETTERS, &t), vec![Finding::Unsupported { claim: "Z".into() }]);
-}
-
-#[test]
-fn circular_analyzer_reports_candidates() {
-    let p = "Prices change hourly. The cache serves fresh prices to every dashboard.";
-    let mut c9 = says("C9", "the cache serves fresh prices to the dashboard");
-    c9.origin = Some(Origin { round: 2, critique: "K1".into() });
-    let t = checked(
-        p,
-        vec![
-            claim("C1", &["Prices change hourly"]),
-            c9,
-            Claim { text: "the cache serves fresh prices to every dashboard".into(), ..claim("C3", &["The cache serves fresh prices to every dashboard"]) },
-        ],
-        vec![inf("I1", &["C1", "C9"], "C3", &[])],
-        &["C3"],
-    );
-    let found = Circular { rules: CheckConfig::bundled() }.analyze(p, &t);
-    assert_eq!(
-        found,
-        vec![Finding::Circular { inference: "I1".into(), premise: "C9".into(), conclusion: "C3".into(), share: 1.0 }]
-    );
 }
 
 fn row(critique: &str, status: CritiqueStatus) -> LedgerRow {

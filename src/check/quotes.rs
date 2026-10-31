@@ -1,7 +1,4 @@
-//! Finds quotes in the proposal word for word, with whitespace normalised, and the sentences and
-//! words of its text.
-
-use std::collections::BTreeSet;
+//! Finds quotes in the proposal word for word, with whitespace normalised.
 
 use crate::model::Span;
 
@@ -96,83 +93,4 @@ pub fn missing_quote_message(owner: &str, quote: &str) -> String {
     format!(
         "{owner}: the quote \"{quote}\" does not occur in the proposal; copy it from the proposal character for character, including markup and punctuation"
     )
-}
-
-/// Where the first sentence of `text` ends, when another sentence, a paragraph or a list item
-/// starts after it within `text`. A sentence ends at ".", "!" or "?" followed by whitespace and
-/// a capital letter, so "e.g. the" stays one sentence.
-pub fn sentence_break(text: &str) -> Option<usize> {
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let at = |i: usize| chars.get(i).map(|&(_, c)| c);
-    for (k, &(offset, c)) in chars.iter().enumerate() {
-        let mut i = k + 1;
-        match c {
-            '.' | '!' | '?' => {
-                while at(i).is_some_and(|c| "\"”’)]".contains(c)) {
-                    i += 1;
-                }
-                let space = i;
-                while at(i).is_some_and(char::is_whitespace) {
-                    i += 1;
-                }
-                while i > space && at(i).is_some_and(|c| "\"“‘([".contains(c)) {
-                    i += 1;
-                }
-                if i > space && at(i).is_some_and(char::is_uppercase) {
-                    return Some(offset + c.len_utf8());
-                }
-            }
-            '\n' => {
-                while at(i).is_some_and(|c| c == ' ' || c == '\t') {
-                    i += 1;
-                }
-                let digits = (i..).take_while(|&j| at(j).is_some_and(|c| c.is_ascii_digit())).count();
-                let list_item = match at(i) {
-                    Some('-' | '*' | '+') => at(i + 1) == Some(' '),
-                    Some(_) if digits > 0 => matches!(at(i + digits), Some('.' | ')')) && at(i + digits + 1) == Some(' '),
-                    _ => false,
-                };
-                if at(i) == Some('\n') || list_item {
-                    return Some(offset);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// The words of `text` with their spans: runs of letters, digits and apostrophes, lowercased,
-/// with ’ read as '.
-fn word_spans(text: &str) -> Vec<(Span, String)> {
-    let apostrophe = |c: char| c == '\'' || c == '’';
-    let mut found = Vec::new();
-    let mut start = None;
-    for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
-        match (start, c.is_alphanumeric() || apostrophe(c)) {
-            (None, true) => start = Some(i),
-            (Some(s), false) => {
-                let raw = &text[s..i];
-                let word = raw.trim_matches(apostrophe);
-                if !word.is_empty() {
-                    let begin = s + raw.len() - raw.trim_start_matches(apostrophe).len();
-                    found.push((Span { start: begin, end: begin + word.len() }, word.replace('’', "'").to_lowercase()));
-                }
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    found
-}
-
-/// The distinct words of `text`, lowercased, with ’ read as '.
-pub fn words(text: &str) -> BTreeSet<String> {
-    word_spans(text).into_iter().map(|(_, word)| word).collect()
-}
-
-/// Every whole-word occurrence in `text` of one of `listed`, ignoring case.
-pub fn find_words(text: &str, listed: &[String]) -> Vec<Span> {
-    let listed: BTreeSet<String> = listed.iter().map(|w| w.replace('’', "'").to_lowercase()).collect();
-    word_spans(text).into_iter().filter(|(_, word)| listed.contains(word)).map(|(span, _)| span).collect()
 }
