@@ -211,7 +211,7 @@ Both front ends are thin layers over the same core and write the same run record
 
 ### Run record
 
-Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), the status (running, done, failed or cancelled) and the report in every rendering. Because every turn is written when it completes, a checkpoint-and-resume feature could restart a run from its last turn.
+Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), every reply the checks refused (the raw model output and its failures), the status (running, done, failed or cancelled) and the report in every rendering. Because every turn is written when it completes, a checkpoint-and-resume feature could restart a run from its last turn.
 
 ### The core and the swappable parts
 

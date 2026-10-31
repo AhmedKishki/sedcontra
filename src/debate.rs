@@ -37,6 +37,22 @@ pub struct TurnEvent {
     pub raw: String,
 }
 
+/// A reply the checks refused, kept so that a failed turn can be read from the run record.
+pub struct Refusal {
+    /// The index the turn takes once one of its replies passes the checks.
+    pub index: u32,
+    pub round: u32,
+    pub role: &'static str,
+    pub attempt: u32,
+    pub raw: String,
+    pub failures: Vec<String>,
+}
+
+pub enum DebateEvent {
+    Turn(TurnEvent),
+    Refused(Refusal),
+}
+
 #[derive(Debug)]
 pub struct DebateError {
     pub reason: String,
@@ -48,7 +64,7 @@ pub async fn run_debate(
     input: &DebateInput,
     advocate: &AgentHandle,
     adversary: &AgentHandle,
-    events: Option<&mpsc::UnboundedSender<TurnEvent>>,
+    events: Option<&mpsc::UnboundedSender<DebateEvent>>,
     cancel: &CancellationToken,
 ) -> Result<DebateOutcome, DebateError> {
     let index = QuoteIndex::new(&input.proposal);
@@ -66,8 +82,18 @@ pub async fn run_debate(
     let record = |turn: Turn, raw: String, turns: &mut Vec<Turn>| {
         turns.push(turn.clone());
         if let Some(tx) = events {
-            let _ = tx.send(TurnEvent { index: turns.len() as u32, max, turn, raw });
+            let _ = tx.send(DebateEvent::Turn(TurnEvent { index: turns.len() as u32, max, turn, raw }));
         }
+    };
+    let attempts = |round: u32, role: &'static str, index: u32| Attempts {
+        role,
+        retries: input.retries,
+        refused: move |attempt: u32, raw: &str, failures: &[String]| {
+            if let Some(tx) = events {
+                let refusal = Refusal { index, round, role, attempt, raw: raw.to_string(), failures: failures.to_vec() };
+                let _ = tx.send(DebateEvent::Refused(refusal));
+            }
+        },
     };
 
     for round in 1..=input.round_limit {
@@ -88,7 +114,7 @@ pub async fn run_debate(
             ),
         };
         let previous = final_tree.as_ref();
-        let ((advocate_turn, checked), raw) = take_turn(advocate, "advocate", message, cancel, &turns, input.retries, |value| {
+        let ((advocate_turn, checked), raw) = take_turn(advocate, message, cancel, &turns, attempts(round, "advocate", turns.len() as u32 + 1), |value| {
             let turn: AdvocateTurn = shaped(value)?;
             check_advocate_turn(&index, &input.checks, turn, round, &expected, previous)
         })
@@ -129,7 +155,7 @@ pub async fn run_debate(
         record(Turn::Advocate { round, turn: advocate_turn }, raw, &mut turns);
 
         let tree = &checked;
-        let (adversary_turn, raw) = take_turn(adversary, "adversary", message, cancel, &turns, input.retries, |value| {
+        let (adversary_turn, raw) = take_turn(adversary, message, cancel, &turns, attempts(round, "adversary", turns.len() as u32 + 1), |value| {
             let turn: AdversaryTurn = shaped(value)?;
             check_adversary_turn(&index, &turn, tree, &rejected, &used_ids, &conceded)?;
             Ok(turn)
@@ -240,16 +266,24 @@ fn shaped<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Vec<String>
     serde_json::from_value(value).map_err(|e| vec![format!("the reply does not have the required JSON shape: {e}")])
 }
 
-/// One turn with one retry: a reply that fails its checks is sent back with the failures.
-async fn take_turn<T>(
+/// Who takes a turn, how often a refused reply is sent back, and where each refused reply goes.
+struct Attempts<F: Fn(u32, &str, &[String])> {
+    role: &'static str,
+    retries: u32,
+    refused: F,
+}
+
+/// One turn: a reply that fails its checks is reported and sent back with the failures, until a
+/// reply passes or the retries run out.
+async fn take_turn<T, F: Fn(u32, &str, &[String])>(
     agent: &AgentHandle,
-    role: &str,
     message: String,
     cancel: &CancellationToken,
     turns: &[Turn],
-    retries: u32,
+    attempts: Attempts<F>,
     check: impl Fn(Value) -> Result<T, Vec<String>>,
 ) -> Result<(T, String), DebateError> {
+    let Attempts { role, retries, refused } = attempts;
     let fail = |reason: String, cancelled: bool| DebateError { reason, cancelled, turns: turns.to_vec() };
     let mut text = message;
     for attempt in 0..=retries {
@@ -259,23 +293,23 @@ async fn take_turn<T>(
             _ = cancel.cancelled() => return Err(fail("cancelled".into(), true)),
             reply = agent.turn(text) => reply.map_err(|e| fail(e.to_string(), false))?,
         };
-        match check(reply.value) {
+        let errors = match check(reply.value) {
             Ok(value) => return Ok((value, reply.raw)),
-            Err(errors) if attempt < retries => {
-                text = format!(
-                    "Your reply failed these checks:\n{}\n\nReply again with the whole corrected JSON object.",
-                    errors.iter().map(|e| format!("- {e}")).collect::<Vec<_>>().join("\n")
-                );
-            }
-            Err(errors) => {
-                let times = match retries + 1 {
-                    1 => "once".to_string(),
-                    2 => "twice".to_string(),
-                    n => format!("{n} times"),
-                };
-                return Err(fail(format!("the {role}'s turn failed the checks {times}: {}", errors.join("; ")), false));
-            }
+            Err(errors) => errors,
+        };
+        refused(attempt + 1, &reply.raw, &errors);
+        if attempt == retries {
+            let times = match retries + 1 {
+                1 => "once".to_string(),
+                2 => "twice".to_string(),
+                n => format!("{n} times"),
+            };
+            return Err(fail(format!("the {role}'s turn failed the checks {times}: {}", errors.join("; ")), false));
         }
+        text = format!(
+            "Your reply failed these checks:\n{}\n\nReply again with the whole corrected JSON object.",
+            errors.iter().map(|e| format!("- {e}")).collect::<Vec<_>>().join("\n")
+        );
     }
     unreachable!("the loop returns on its last attempt")
 }

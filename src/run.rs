@@ -12,7 +12,7 @@ use crate::actor::spawn_agent;
 use crate::agents::{AgentDef, load_agent};
 use crate::analyze::default_analyzers;
 use crate::config::Config;
-use crate::debate::{DebateInput, TurnEvent, run_debate};
+use crate::debate::{DebateEvent, DebateInput, run_debate};
 use crate::provider::{ModelProvider, OpenAiCompatible};
 use crate::record::RunRecord;
 use crate::report::{Report, build_report, render_argdown, render_markdown, render_transcript};
@@ -102,16 +102,25 @@ pub async fn cross_examine(
     let advocate = spawn_agent(env.advocate.clone(), advocate_provider);
     let adversary = spawn_agent(env.adversary.clone(), adversary_provider);
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<TurnEvent>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<DebateEvent>();
     let forward_record = record.clone();
     let forwarder = tokio::spawn(async move {
-        while let Some(ev) = rx.recv().await {
-            if let Err(e) = forward_record.write_turn(&ev) {
-                eprintln!("warning: could not record turn {}: {e:#}", ev.index);
-            }
-            if let Some(progress) = &progress {
-                let message = format!("round {}: {} done", ev.turn.round(), ev.turn.role());
-                let _ = progress.send(Progress { done: ev.index, max: ev.max, message });
+        while let Some(event) = rx.recv().await {
+            match event {
+                DebateEvent::Turn(ev) => {
+                    if let Err(e) = forward_record.write_turn(&ev) {
+                        eprintln!("warning: could not record turn {}: {e:#}", ev.index);
+                    }
+                    if let Some(progress) = &progress {
+                        let message = format!("round {}: {} done", ev.turn.round(), ev.turn.role());
+                        let _ = progress.send(Progress { done: ev.index, max: ev.max, message });
+                    }
+                }
+                DebateEvent::Refused(refusal) => {
+                    if let Err(e) = forward_record.write_refusal(&refusal) {
+                        eprintln!("warning: could not record a refused reply of turn {}: {e:#}", refusal.index);
+                    }
+                }
             }
         }
     });

@@ -1,4 +1,4 @@
-//! One folder per run: inputs, resolved settings, every turn, the status and the report.
+//! One folder per run: inputs, resolved settings, every turn, every refused reply, the status and the report.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use anyhow::Context;
 
 use crate::agents::AgentDef;
 use crate::config::Config;
-use crate::debate::TurnEvent;
+use crate::debate::{Refusal, TurnEvent};
 
 #[derive(Clone, Debug)]
 pub struct RunRecord {
@@ -56,6 +56,13 @@ impl RunRecord {
         let turns = self.dir.join("turns");
         fs::write(turns.join(format!("{stem}.json")), &ev.raw)?;
         fs::write(turns.join(format!("{stem}.parsed.json")), serde_json::to_string_pretty(&ev.turn)?)?;
+        Ok(())
+    }
+
+    pub fn write_refusal(&self, refusal: &Refusal) -> anyhow::Result<()> {
+        let name = format!("{:02}-{}-r{}.refused-{}.json", refusal.index, refusal.role, refusal.round, refusal.attempt);
+        let content = serde_json::json!({ "failures": refusal.failures, "reply": refusal.raw });
+        fs::write(self.dir.join("turns").join(name), serde_json::to_string_pretty(&content)?)?;
         Ok(())
     }
 
