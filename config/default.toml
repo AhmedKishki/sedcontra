@@ -3,9 +3,9 @@
 
 rounds = 1  # the round limit, 1–10; every MCP call runs under it, and run --rounds overrides it for one run
 
-# The model each agent runs on, and how deeply it reasons. The advocate and the adversary
-# run on the same model, and the advocate reasons at low depth while the adversary reasons at
-# high depth; edit either agent's tables to change that.
+# The model each agent runs on, and how deeply it reasons. The adversary and the advocate
+# run on the same model and both reason at high depth, because the advocate judges each
+# critique as the adversary judges each answer; edit either agent's tables to change that.
 # [models.<agent>.request] is merged into that agent's request body, so it holds the
 # provider's own parameters. For DeepSeek, depth is reasoning_effort = "low", "high" or "max",
 # and thinking = { type = "disabled" } turns reasoning off. Reasoning counts against max_tokens;
@@ -16,7 +16,7 @@ model = "deepseek-flash"
 max_tokens = 32768
 
 [models.advocate.request]
-reasoning_effort = "low"
+reasoning_effort = "high"
 
 [models.adversary]
 provider = "deepseek"
@@ -26,18 +26,6 @@ max_tokens = 32768
 [models.adversary.request]
 reasoning_effort = "high"
 
-[models.judge]  # used only by `eval`
-provider = "deepseek"
-model = "deepseek-flash"
-max_tokens = 32768
-
-[models.judge.request]
-reasoning_effort = "high"
-
 [providers.deepseek]
 base_url = "https://api.deepseek.com"
 api_key_env = "DEEPSEEK_API_KEY"  # CI fallback, read only when no key file exists
-
-[analyzers]
-stub_max_len = 2
-uncovered_min_words = 4

@@ -1,4 +1,4 @@
-//! The configuration: models, providers, round limit, analyzer thresholds and the runs directory.
+//! The configuration: models, providers, round limit and the runs directory.
 //!
 //! The built-in defaults live in `config/default.toml`, not in code; a user file overrides them
 //! table by table. No agent and no line of code names a provider: each agent's model comes from
@@ -20,7 +20,6 @@ pub struct Config {
     pub runs_dir: Option<PathBuf>,
     pub models: BTreeMap<String, ModelSettings>,
     pub providers: BTreeMap<String, ProviderConfig>,
-    pub analyzers: AnalyzerConfig,
 }
 
 /// The model an agent runs on: its `[models.<agent>]` table.
@@ -43,12 +42,6 @@ pub struct ProviderConfig {
     pub api_key_env: Option<String>,
     #[serde(default)]
     pub api_key_file: Option<PathBuf>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct AnalyzerConfig {
-    pub stub_max_len: usize,
-    pub uncovered_min_words: usize,
 }
 
 /// The highest round limit allowed, so a mistyped setting cannot run a debate without end.

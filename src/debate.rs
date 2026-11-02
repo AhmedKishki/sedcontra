@@ -1,6 +1,6 @@
-//! The orchestrator's debate loop between the advocate and the adversary.
+//! The orchestrator's debate loop between the adversary and the advocate.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -9,9 +9,30 @@ use tokio_util::sync::CancellationToken;
 use crate::actor::AgentHandle;
 use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn};
 use crate::model::{
-    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, Change, CheckedTree, Critique, CritiqueId,
-    CritiqueStatus, DebateOutcome, Ending, LedgerRow, OpenCritique, ResponseAction, Turn,
+    AdversaryTurn, AdvocateTurn, AnswerKind, CritiqueId, CritiqueStatus, DebateOutcome, Ending, Reply, ResponseAction,
+    Thread, Turn,
 };
+
+/// The orchestrator's protocol: the JSON object each adversary turn replies with. It is appended
+/// to the adversary's prompt at load, so a custom prompt cannot leave it out.
+pub const ADVERSARY_SHAPE: &str = r#"Reply with one JSON object and nothing else. The shape:
+
+{"responses": [{"critique": "K1", "action": "drop", "reasons": "…", "quotes": []},
+               {"critique": "K2", "action": "press", "reasons": "…", "quotes": ["…"]}],
+ "critiques": [{"id": "K3", "kind": "gap", "places": ["…"], "point": "what the step assumes that the proposal does not say", "support": "the case: the premises true and the conclusion false"},
+               {"id": "K4", "kind": "conflict", "places": ["…", "…"], "point": "…", "support": "…"}],
+ "satisfied": false}
+
+In round 1 responses is empty. Copy every place and quote from the proposal character for character."#;
+
+/// The same for the advocate.
+pub const ADVOCATE_SHAPE: &str = r#"Reply with one JSON object and nothing else. The shape:
+
+{"answers": [{"critique": "K1", "kind": "accept", "reasons": "what the critique shows and what the argument now lacks"},
+             {"critique": "K2", "kind": "discuss", "ground": "misreads", "reasons": "…", "quotes": ["the words it misreads", "the place that answers it"]},
+             {"critique": "K3", "kind": "discuss", "ground": "unclear", "reasons": "exactly what is missing from it", "quotes": []}]}
+
+Copy every quote from the proposal character for character."#;
 
 pub struct DebateInput {
     pub proposal: String,
@@ -44,8 +65,7 @@ pub async fn run_debate(
     let max = 2 * input.round_limit;
     let mut turns: Vec<Turn> = Vec::new();
     let mut used_ids: BTreeSet<CritiqueId> = BTreeSet::new();
-    let mut last_adversary: Option<AdversaryTurn> = None;
-    let mut final_tree: Option<CheckedTree> = None;
+    let mut last_advocate: Option<AdvocateTurn> = None;
     let mut ending = Ending::LimitReached;
     let mut rounds_run = 0;
 
@@ -59,62 +79,66 @@ pub async fn run_debate(
     for round in 1..=input.round_limit {
         rounds_run = round;
 
-        let (message, expected) = match &last_adversary {
-            None => (first_advocate_message(input), BTreeSet::new()),
-            Some(last) => (
-                format!(
-                    "## The adversary's turn, round {}\n\n{}\n\nAnswer every critique raised or maintained above, then give the full revised tree.",
-                    round - 1,
-                    pretty(last)
-                ),
-                expected_answers(last),
+        let (message, discussed) = match &last_advocate {
+            None => (
+                format!("{}\n\nRaise every critique of the proposal you can substantiate.", proposal_section(input)),
+                BTreeSet::new(),
             ),
+            Some(last) => {
+                let discussed = discussed_critiques(last);
+                let instruction = if discussed.is_empty() {
+                    "The advocate discussed no critique, so respond to none. Raise any new critique, or declare yourself satisfied.".to_string()
+                } else {
+                    format!(
+                        "Respond to {}, the critiques the advocate discussed, and to no other: an accepted critique is settled. Then raise any new critique, or declare yourself satisfied.",
+                        discussed.iter().cloned().collect::<Vec<_>>().join(", ")
+                    )
+                };
+                (
+                    format!("## The advocate's turn, round {}\n\n{}\n\n{instruction}", round - 1, pretty(last)),
+                    discussed,
+                )
+            }
         };
-        let ((advocate_turn, checked), raw) = take_turn(advocate, "advocate", message, cancel, &turns, |value| {
-            let turn: AdvocateTurn = shaped(value)?;
-            check_advocate_turn(&index, turn, round, &expected)
-        })
-        .await?;
-        let rejected: BTreeSet<CritiqueId> = advocate_turn
-            .answers
-            .iter()
-            .filter(|a| a.kind == AnswerKind::Reject)
-            .map(|a| a.critique.clone())
-            .collect();
-        let message = if round == 1 {
-            format!(
-                "{}\n\n## The advocate's turn, round 1\n\n{}\n\nCritique the tree.",
-                proposal_section(input),
-                pretty(&advocate_turn)
-            )
-        } else {
-            format!(
-                "## The advocate's turn, round {round}\n\n{}\n\nRespond to the advocate's rejections, then critique the revised tree.",
-                pretty(&advocate_turn)
-            )
-        };
-        record(Turn::Advocate { round, turn: advocate_turn }, raw, &mut turns);
-
-        let tree = &checked;
         let (adversary_turn, raw) = take_turn(adversary, "adversary", message, cancel, &turns, |value| {
             let turn: AdversaryTurn = shaped(value)?;
-            check_adversary_turn(&index, &turn, tree, &rejected, &used_ids)?;
+            check_adversary_turn(&index, &turn, &discussed, &used_ids)?;
             Ok(turn)
         })
         .await?;
-        final_tree = Some(checked);
         used_ids.extend(adversary_turn.critiques.iter().map(|c| c.id.clone()));
+        let expected = expected_answers(&adversary_turn);
+        let message = if round == 1 {
+            format!(
+                "{}\n\n## The adversary's turn, round 1\n\n{}\n\nAnswer every critique.",
+                proposal_section(input),
+                pretty(&adversary_turn)
+            )
+        } else {
+            format!(
+                "## The adversary's turn, round {round}\n\n{}\n\nAnswer every critique pressed or raised.",
+                pretty(&adversary_turn)
+            )
+        };
         let satisfied = adversary_turn.satisfied;
-        record(Turn::Adversary { round, turn: adversary_turn.clone() }, raw, &mut turns);
+        record(Turn::Adversary { round, turn: adversary_turn }, raw, &mut turns);
         if satisfied {
             ending = Ending::Satisfied { round };
             break;
         }
-        last_adversary = Some(adversary_turn);
+
+        let (advocate_turn, raw) = take_turn(advocate, "advocate", message, cancel, &turns, |value| {
+            let turn: AdvocateTurn = shaped(value)?;
+            check_advocate_turn(&index, &turn, &expected)?;
+            Ok(turn)
+        })
+        .await?;
+        record(Turn::Advocate { round, turn: advocate_turn.clone() }, raw, &mut turns);
+        last_advocate = Some(advocate_turn);
     }
 
-    let final_tree = final_tree.expect("at least one round ran");
-    Ok(outcome(turns, final_tree, ending, rounds_run, input.round_limit))
+    let threads = build_threads(&turns);
+    Ok(DebateOutcome { turns, ending, rounds_run, round_limit: input.round_limit, threads })
 }
 
 fn proposal_section(input: &DebateInput) -> String {
@@ -122,21 +146,17 @@ fn proposal_section(input: &DebateInput) -> String {
     format!("## Proposal\n\n{}\n\n## Context from the caller\n\n{context}", input.proposal)
 }
 
-fn first_advocate_message(input: &DebateInput) -> String {
-    format!("{}\n\nBuild the tree.", proposal_section(input))
+/// The critiques the advocate discussed, which the adversary must respond to.
+fn discussed_critiques(last: &AdvocateTurn) -> BTreeSet<CritiqueId> {
+    last.answers.iter().filter(|a| a.kind == AnswerKind::Discuss).map(|a| a.critique.clone()).collect()
 }
 
-/// The critiques the advocate must answer: those the adversary raised or maintained in its last turn.
-fn expected_answers(last: &AdversaryTurn) -> BTreeSet<CritiqueId> {
-    last.critiques
+/// The critiques the advocate must answer: those the adversary raised or pressed.
+fn expected_answers(turn: &AdversaryTurn) -> BTreeSet<CritiqueId> {
+    turn.critiques
         .iter()
         .map(|c| c.id.clone())
-        .chain(
-            last.responses
-                .iter()
-                .filter(|r| r.action == ResponseAction::Maintain)
-                .map(|r| r.critique.clone()),
-        )
+        .chain(turn.responses.iter().filter(|r| r.action == ResponseAction::Press).map(|r| r.critique.clone()))
         .collect()
 }
 
@@ -182,116 +202,43 @@ async fn take_turn<T>(
     unreachable!("the loop returns on its second attempt")
 }
 
-fn outcome(turns: Vec<Turn>, final_tree: CheckedTree, ending: Ending, rounds_run: u32, round_limit: u32) -> DebateOutcome {
-    let critiques: BTreeMap<&str, &Critique> = turns
-        .iter()
-        .filter_map(|t| match t {
-            Turn::Adversary { turn, .. } => Some(turn.critiques.iter()),
-            _ => None,
-        })
-        .flatten()
-        .map(|c| (c.id.as_str(), c))
-        .collect();
-
-    let changes = turns
-        .iter()
-        .filter_map(|t| match t {
-            Turn::Advocate { round, turn } => Some(turn.answers.iter().map(move |a| (*round, a))),
-            _ => None,
-        })
-        .flatten()
-        .filter(|(_, a)| matches!(a.kind, AnswerKind::Accept | AnswerKind::Adapt))
-        .filter_map(|(round, answer)| {
-            critiques.get(answer.critique.as_str()).map(|c| Change {
-                round,
-                critique: (*c).clone(),
-                answer: answer.clone(),
-            })
-        })
-        .collect();
-
-    let (open, unanswered) = match (&ending, turns.last(), last_advocate_answers(&turns)) {
-        (Ending::LimitReached, Some(Turn::Adversary { turn, .. }), answers) => {
-            let open = turn
-                .responses
-                .iter()
-                .filter(|r| r.action == ResponseAction::Maintain)
-                .filter_map(|r| {
-                    let critique = critiques.get(r.critique.as_str())?;
-                    let answer = answers.iter().find(|a| a.critique == r.critique)?;
-                    Some(OpenCritique { critique: (*critique).clone(), answer: answer.clone(), response: r.clone() })
-                })
-                .collect();
-            (open, turn.critiques.clone())
-        }
-        _ => (Vec::new(), Vec::new()),
-    };
-
-    let ledger = build_ledger(&turns);
-    DebateOutcome { turns, final_tree, ending, rounds_run, round_limit, ledger, changes, open, unanswered }
-}
-
-fn last_advocate_answers(turns: &[Turn]) -> Vec<Answer> {
-    turns
-        .iter()
-        .rev()
-        .find_map(|t| match t {
-            Turn::Advocate { turn, .. } => Some(turn.answers.clone()),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-/// One row per critique, in the order raised, with its status after the last turn.
-pub fn build_ledger(turns: &[Turn]) -> Vec<LedgerRow> {
-    enum State {
-        Settled(CritiqueStatus),
-        Rejected,
-    }
-    let mut rows: Vec<(Critique, u32, State)> = Vec::new();
-    let position = |rows: &Vec<(Critique, u32, State)>, id: &str| rows.iter().position(|(c, _, _)| c.id == id);
-
+/// One thread per critique, in the order raised, with everything said about it. The last reply
+/// decides the status, so a critique on which neither side has yielded is open.
+pub fn build_threads(turns: &[Turn]) -> Vec<Thread> {
+    let mut threads: Vec<Thread> = Vec::new();
+    let position = |threads: &Vec<Thread>, id: &str| threads.iter().position(|t| t.critique.id == id);
     for turn in turns {
         match turn {
-            Turn::Advocate { turn, .. } => {
-                for answer in &turn.answers {
-                    if let Some(i) = position(&rows, &answer.critique) {
-                        rows[i].2 = match answer.kind {
-                            AnswerKind::Accept => State::Settled(CritiqueStatus::Accepted),
-                            AnswerKind::Adapt => State::Settled(CritiqueStatus::Adapted),
-                            AnswerKind::Reject => State::Rejected,
-                        };
-                    }
-                }
-            }
             Turn::Adversary { round, turn } => {
                 for response in &turn.responses {
-                    if let Some(i) = position(&rows, &response.critique) {
-                        match (response.action, &rows[i].2) {
-                            (ResponseAction::Maintain, _) => rows[i].2 = State::Settled(CritiqueStatus::Open),
-                            (ResponseAction::Drop, State::Rejected) => {
-                                rows[i].2 = State::Settled(CritiqueStatus::DroppedAfterRejection)
-                            }
-                            (ResponseAction::Drop, _) => {}
-                        }
+                    if let Some(i) = position(&threads, &response.critique) {
+                        threads[i].replies.push(Reply::Adversary { round: *round, response: response.clone() });
                     }
                 }
                 for critique in &turn.critiques {
-                    rows.push((critique.clone(), *round, State::Settled(CritiqueStatus::Unanswered)));
+                    threads.push(Thread {
+                        critique: critique.clone(),
+                        raised_in: *round,
+                        replies: Vec::new(),
+                        status: CritiqueStatus::Open,
+                    });
+                }
+            }
+            Turn::Advocate { round, turn } => {
+                for answer in &turn.answers {
+                    if let Some(i) = position(&threads, &answer.critique) {
+                        threads[i].replies.push(Reply::Advocate { round: *round, answer: answer.clone() });
+                    }
                 }
             }
         }
     }
-
-    rows.into_iter()
-        .map(|(critique, raised_in, state)| LedgerRow {
-            critique,
-            raised_in,
-            status: match state {
-                State::Settled(status) => status,
-                // The adversary must respond to every rejection, so this only follows a failed run.
-                State::Rejected => CritiqueStatus::Open,
-            },
-        })
-        .collect()
+    for thread in &mut threads {
+        thread.status = match thread.replies.last() {
+            Some(Reply::Advocate { answer, .. }) if answer.kind == AnswerKind::Accept => CritiqueStatus::Accepted,
+            Some(Reply::Adversary { response, .. }) if response.action == ResponseAction::Drop => CritiqueStatus::Dropped,
+            _ => CritiqueStatus::Open,
+        };
+    }
+    threads
 }

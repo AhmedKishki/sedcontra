@@ -64,10 +64,9 @@ impl RunRecord {
         Ok(())
     }
 
-    pub fn write_report(&self, markdown: &str, json: &serde_json::Value, argdown: &str) -> anyhow::Result<()> {
+    pub fn write_report(&self, markdown: &str, json: &serde_json::Value) -> anyhow::Result<()> {
         fs::write(self.dir.join("report.md"), markdown)?;
         fs::write(self.dir.join("report.json"), serde_json::to_string_pretty(json)?)?;
-        fs::write(self.dir.join("report.argdown"), argdown)?;
         Ok(())
     }
 }

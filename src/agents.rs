@@ -1,14 +1,15 @@
-//! Agent definitions: a prompt in a Markdown file, looked up in layers, and the model the
-//! configuration assigns to the agent. The prompt names no provider and no model.
+//! Agent definitions: a prompt in a Markdown file, looked up in layers, with the orchestrator's
+//! output shape appended, and the model the configuration assigns to the agent. The prompt
+//! names no provider and no model.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow, bail};
 
 use crate::config::{Config, ModelSettings, config_dir};
 
-const STANDARD_FILE: &str = "critique-standard.md";
-const STANDARD_PLACEHOLDER: &str = "{{critique-standard}}";
+const DISCIPLINE_FILE: &str = "discipline.md";
+const DISCIPLINE_PLACEHOLDER: &str = "{{discipline}}";
 
 #[derive(Clone, Debug)]
 pub struct AgentDef {
@@ -21,10 +22,9 @@ pub struct AgentDef {
 
 fn bundled(file: &str) -> Option<&'static str> {
     match file {
-        "advocate.md" => Some(include_str!("../agents/advocate.md")),
         "adversary.md" => Some(include_str!("../agents/adversary.md")),
-        "judge.md" => Some(include_str!("../agents/judge.md")),
-        STANDARD_FILE => Some(include_str!("../agents/critique-standard.md")),
+        "advocate.md" => Some(include_str!("../agents/advocate.md")),
+        DISCIPLINE_FILE => Some(include_str!("../agents/discipline.md")),
         _ => None,
     }
 }
@@ -44,15 +44,24 @@ fn find(file: &str) -> anyhow::Result<(String, String)> {
         .ok_or_else(|| anyhow!("no agent file {file} in .sedcontra/agents, the user config or the bundled set"))
 }
 
-pub fn load_agent(name: &str, config: &Config) -> anyhow::Result<AgentDef> {
-    let (standard, _) = find(STANDARD_FILE)?;
-    let (text, source) = find(&format!("{name}.md"))?;
+/// `file` names a prompt for this run in place of the layered lookup. The output shape is the
+/// orchestrator's protocol, so it is appended here and a custom prompt cannot leave it out.
+pub fn load_agent(name: &str, config: &Config, file: Option<&Path>, shape: &str) -> anyhow::Result<AgentDef> {
+    let (discipline, _) = find(DISCIPLINE_FILE)?;
+    let (text, source) = match file {
+        Some(path) => (
+            std::fs::read_to_string(path).with_context(|| format!("reading the {name} prompt {}", path.display()))?,
+            path.display().to_string(),
+        ),
+        None => find(&format!("{name}.md"))?,
+    };
     if text.starts_with("+++") {
         bail!("{source}: an agent file holds only the prompt; set the model in [models.{name}] of the configuration");
     }
+    let prompt = text.trim().replace(DISCIPLINE_PLACEHOLDER, discipline.trim());
     Ok(AgentDef {
         name: name.to_string(),
-        prompt: text.trim().replace(STANDARD_PLACEHOLDER, standard.trim()),
+        prompt: format!("{prompt}\n\n## Output\n\n{}", shape.trim()),
         source,
         model: config.model_for(name)?,
     })

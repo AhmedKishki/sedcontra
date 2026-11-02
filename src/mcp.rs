@@ -10,13 +10,13 @@ use tokio::sync::mpsc;
 
 use crate::run::{Environment, Progress, RunFailure, cross_examine};
 
-const TOOL_DESCRIPTION: &str = "Cross-examine a proposal for invented connections, unstated or unneeded premises, and text its argument does not use. An advocate reconstructs the proposal's argument as a tree of claims and inferences, and an adversary critiques it under explanatory-critique: a critique counts only if it shows a case where an inference's premises hold and its conclusion fails, derives a conclusion without one of its premises, or quotes a misreading. Each round ends with the adversary's critique, and the advocate answers it at the start of the next round, so a critique raised in the last round comes back unanswered for you to weigh. The debate ends when the adversary is satisfied or the configured round limit is reached. The report holds a ledger of every critique, the final tree in Argdown, every change the debate forced, the critiques left open or unanswered, restatements, uncovered text and stubs to consider pruning, and the full transcript. It describes the proposal and does not judge it. The call can take several minutes.";
+const TOOL_DESCRIPTION: &str = "Cross-examine a proposal for premises it never states, conclusions it presupposes, sentences that cannot both hold, words that shift meaning and text its argument does not use. An adversary raises every critique it can substantiate against the proposal's own words, and an advocate defends the proposal from those words: a critique that shows a failure must be accepted, and one that misreads the proposal or shows nothing is discussed until it is dropped. The debate ends when the adversary is satisfied or the configured round limit is reached. The report holds a ledger of every critique with its status, the accepted critiques with what the argument lacks, the dropped critiques with the reading that answered them, the open critiques with both sides' arguments, and the full transcript. It describes the proposal and does not judge it. The call can take several minutes.";
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct VideturQuodArgs {
-    /// The text to cross-examine, of any length. The advocate and the adversary see nothing else of your work, so state the argument in full.
+    /// The text to cross-examine, of any length. The adversary and the advocate see nothing else of your work, so state the argument in full.
     pub proposal: String,
-    /// Optional: what you need the proposal for, and any evidence you already have. The advocate and the adversary argue from the proposal, this context and their own knowledge.
+    /// Optional: what you need the proposal for, and any evidence you already have. The adversary and the advocate argue from the proposal, this context and their own knowledge.
     pub context: Option<String>,
 }
 
