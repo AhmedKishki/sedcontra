@@ -10,12 +10,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::actor::spawn_agent;
 use crate::agents::{AgentDef, load_agent};
-use crate::analyze::default_analyzers;
 use crate::config::Config;
-use crate::debate::{DebateInput, TurnEvent, run_debate};
+use crate::debate::{ADVERSARY_SHAPE, ADVOCATE_SHAPE, DebateInput, TurnEvent, run_debate};
 use crate::provider::{ModelProvider, OpenAiCompatible};
 use crate::record::RunRecord;
-use crate::report::{Report, build_report, render_argdown, render_markdown, render_transcript};
+use crate::report::{Report, build_report, render_markdown, render_transcript};
 
 pub struct Environment {
     pub config: Config,
@@ -25,10 +24,10 @@ pub struct Environment {
 }
 
 impl Environment {
-    pub fn load(config_path: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn load(config_path: Option<&Path>, adversary_file: Option<&Path>, advocate_file: Option<&Path>) -> anyhow::Result<Self> {
         let config = Config::load(config_path)?;
-        let advocate = load_agent("advocate", &config)?;
-        let adversary = load_agent("adversary", &config)?;
+        let advocate = load_agent("advocate", &config, advocate_file, ADVOCATE_SHAPE)?;
+        let adversary = load_agent("adversary", &config, adversary_file, ADVERSARY_SHAPE)?;
         let mut env = Environment { config, advocate, adversary, providers: BTreeMap::new() };
         for def in [env.advocate.clone(), env.adversary.clone()] {
             env.provider_for(&def)?;
@@ -61,7 +60,6 @@ pub struct RunOutput {
     pub report: Report,
     pub markdown: String,
     pub json: serde_json::Value,
-    pub argdown: String,
 }
 
 pub enum RunFailure {
@@ -123,18 +121,13 @@ pub async fn cross_examine(
 
     match result {
         Ok(outcome) => {
-            let findings = default_analyzers(&env.config.analyzers)
-                .iter()
-                .flat_map(|a| a.analyze(&proposal, &outcome.final_tree))
-                .collect();
-            let report = build_report(&record, outcome, findings);
+            let report = build_report(&record, outcome);
             let markdown = render_markdown(&report);
             let json = serde_json::to_value(&report).unwrap_or_default();
-            let argdown = render_argdown(&report.final_tree.tree);
-            if let Err(e) = record.write_report(&markdown, &json, &argdown).and_then(|_| record.set_status("done")) {
+            if let Err(e) = record.write_report(&markdown, &json).and_then(|_| record.set_status("done")) {
                 eprintln!("warning: could not write the report into {}: {e:#}", record.dir.display());
             }
-            Ok(RunOutput { report, markdown, json, argdown })
+            Ok(RunOutput { report, markdown, json })
         }
         Err(e) if e.cancelled => {
             let _ = record.set_status("cancelled");

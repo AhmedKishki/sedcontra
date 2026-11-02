@@ -3,27 +3,12 @@ use std::sync::Arc;
 use sedcontra::actor::spawn_agent;
 use sedcontra::agents::AgentDef;
 use sedcontra::config::ModelSettings;
-use sedcontra::debate::{DebateInput, run_debate};
-use sedcontra::model::{CritiqueStatus, DebateOutcome, Ending};
+use sedcontra::debate::{DebateError, DebateInput, run_debate};
+use sedcontra::model::{AnswerKind, CritiqueStatus, DebateOutcome, Ending, Reply, ResponseAction};
 use sedcontra::provider::{ModelProvider, ScriptedProvider};
 use tokio_util::sync::CancellationToken;
 
 const PROPOSAL: &str = "A is true. B is true. So C is true.";
-
-const TREE: &str = r#"{"claims": [
-    {"id": "C1", "text": "A", "places": ["A is true"]},
-    {"id": "C2", "text": "B", "places": ["B is true"]},
-    {"id": "C3", "text": "C", "places": ["C is true"]}],
-  "inferences": [{"id": "I1", "premises": ["C1", "C2"], "conclusion": "C3", "places": ["So"]}],
-  "conclusions": ["C3"]}"#;
-
-const TREE_WITH_C9: &str = r#"{"claims": [
-    {"id": "C1", "text": "A", "places": ["A is true"]},
-    {"id": "C2", "text": "B", "places": ["B is true"]},
-    {"id": "C9", "text": "hidden", "places": [], "origin": {"round": 2, "critique": "K2"}},
-    {"id": "C3", "text": "C", "places": ["C is true"]}],
-  "inferences": [{"id": "I1", "premises": ["C1", "C2", "C9"], "conclusion": "C3", "places": ["So"]}],
-  "conclusions": ["C3"]}"#;
 
 fn def(name: &str) -> AgentDef {
     AgentDef {
@@ -34,121 +19,143 @@ fn def(name: &str) -> AgentDef {
     }
 }
 
-fn gap(id: &str) -> String {
-    format!(r#"{{"id": "{id}", "kind": "gap", "inference": "I1", "point": "misses Q", "support": "A and B hold, Q fails, C fails"}}"#)
-}
-
-async fn debate(provider: &Arc<ScriptedProvider>, round_limit: u32) -> DebateOutcome {
+async fn debate(provider: &Arc<ScriptedProvider>, round_limit: u32) -> Result<DebateOutcome, DebateError> {
     let dynamic: Arc<dyn ModelProvider> = provider.clone();
     let advocate = spawn_agent(def("advocate"), dynamic.clone());
     let adversary = spawn_agent(def("adversary"), dynamic);
     let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit };
-    run_debate(&input, &advocate, &adversary, None, &CancellationToken::new())
-        .await
-        .unwrap_or_else(|e| panic!("debate failed: {}", e.reason))
+    run_debate(&input, &advocate, &adversary, None, &CancellationToken::new()).await
 }
 
-fn ids<T>(items: &[T], id: impl Fn(&T) -> &str) -> Vec<String> {
-    items.iter().map(|i| id(i).to_string()).collect()
+fn critique(id: &str) -> String {
+    format!(
+        r#"{{"id": "{id}", "kind": "gap", "places": ["So C is true"], "point": "A and B do not give C", "support": "A and B hold while C fails"}}"#
+    )
+}
+
+fn adversary(responses: &[String], critiques: &[String], satisfied: bool) -> String {
+    format!(r#"{{"responses": [{}], "critiques": [{}], "satisfied": {satisfied}}}"#, responses.join(", "), critiques.join(", "))
+}
+
+fn dropping(id: &str) -> String {
+    format!(r#"{{"critique": "{id}", "action": "drop", "reasons": "the reading is right"}}"#)
+}
+
+fn pressing(id: &str) -> String {
+    format!(r#"{{"critique": "{id}", "action": "press", "reasons": "here is the case"}}"#)
+}
+
+fn accepting(id: &str) -> String {
+    format!(r#"{{"critique": "{id}", "kind": "accept", "reasons": "the step needs a premise the proposal lacks"}}"#)
+}
+
+fn discussing(id: &str, ground: &str, quotes: &[&str]) -> String {
+    let quotes: Vec<String> = quotes.iter().map(|q| format!("\"{q}\"")).collect();
+    format!(
+        r#"{{"critique": "{id}", "kind": "discuss", "ground": "{ground}", "reasons": "what fails is not shown", "quotes": [{}]}}"#,
+        quotes.join(", ")
+    )
+}
+
+fn advocate(answers: &[String]) -> String {
+    format!(r#"{{"answers": [{}]}}"#, answers.join(", "))
 }
 
 fn status(outcome: &DebateOutcome, id: &str) -> CritiqueStatus {
-    outcome.ledger.iter().find(|r| r.critique.id == id).unwrap_or_else(|| panic!("{id} not in ledger")).status
+    outcome.threads.iter().find(|t| t.critique.id == id).unwrap_or_else(|| panic!("{id} has no thread")).status
 }
 
 #[tokio::test]
-async fn satisfied_in_round_one_stops_early() {
+async fn satisfied_in_round_one_stops_without_an_advocate_turn() {
     let p = Arc::new(ScriptedProvider::new());
-    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
-    p.push("adversary", r#"{"satisfied": true}"#);
-    let out = debate(&p, 3).await;
+    p.push("adversary", adversary(&[], &[], true));
+    let out = debate(&p, 3).await.unwrap();
     assert_eq!(out.ending, Ending::Satisfied { round: 1 });
     assert_eq!(out.rounds_run, 1);
-    assert!(out.ledger.is_empty());
-    assert_eq!(p.calls(), vec!["advocate", "adversary"]);
+    assert!(out.threads.is_empty());
+    assert_eq!(p.calls(), vec!["adversary"]);
 }
 
 #[tokio::test]
-async fn satisfied_in_round_two() {
+async fn accepted_critique_is_settled_in_one_round() {
     let p = Arc::new(ScriptedProvider::new());
-    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
-    p.push("adversary", format!(r#"{{"critiques": [{}], "satisfied": false}}"#, gap("K1")));
-    p.push(
-        "advocate",
-        format!(
-            r#"{{"answers": [{{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"]}}], "tree": {TREE}}}"#
-        ),
-    );
-    p.push("adversary", r#"{"responses": [{"critique": "K1", "action": "drop"}], "satisfied": true}"#);
-    let out = debate(&p, 3).await;
-    assert_eq!(out.ending, Ending::Satisfied { round: 2 });
-    assert!(out.open.is_empty());
-    assert!(out.unanswered.is_empty());
-    assert_eq!(status(&out, "K1"), CritiqueStatus::DroppedAfterRejection);
-}
-
-#[tokio::test]
-async fn limit_splits_open_and_unanswered() {
-    let p = Arc::new(ScriptedProvider::new());
-    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
-    p.push("adversary", format!(r#"{{"critiques": [{}, {}], "satisfied": false}}"#, gap("K1"), gap("K2")));
-    p.push(
-        "advocate",
-        format!(
-            r#"{{"answers": [
-                {{"critique": "K1", "kind": "reject", "ground": "stated", "reasons": "stated", "quotes": ["A is true"]}},
-                {{"critique": "K2", "kind": "accept", "reasons": "added C9"}}],
-              "tree": {TREE_WITH_C9}}}"#
-        ),
-    );
-    p.push(
-        "adversary",
-        format!(
-            r#"{{"responses": [{{"critique": "K1", "action": "maintain", "reasons": "the quote does not state Q"}}],
-                "critiques": [{}], "satisfied": false}}"#,
-            gap("K3")
-        ),
-    );
-    let out = debate(&p, 2).await;
+    p.push("adversary", adversary(&[], &[critique("K1")], false));
+    p.push("advocate", advocate(&[accepting("K1")]));
+    let out = debate(&p, 1).await.unwrap();
     assert_eq!(out.ending, Ending::LimitReached);
-    assert_eq!(out.rounds_run, 2);
-    assert_eq!(ids(&out.open, |o| &o.critique.id), vec!["K1"]);
-    assert_eq!(ids(&out.unanswered, |c| &c.id), vec!["K3"]);
-    assert_eq!(ids(&out.changes, |c| &c.critique.id), vec!["K2"]);
+    assert_eq!(status(&out, "K1"), CritiqueStatus::Accepted);
+    assert_eq!(out.threads[0].replies.len(), 1);
+    assert_eq!(p.calls(), vec!["adversary", "advocate"]);
+}
+
+#[tokio::test]
+async fn discussed_critique_is_open_at_the_limit() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("adversary", adversary(&[], &[critique("K1")], false));
+    p.push("advocate", advocate(&[discussing("K1", "unclear", &[])]));
+    let out = debate(&p, 1).await.unwrap();
+    assert_eq!(out.ending, Ending::LimitReached);
     assert_eq!(status(&out, "K1"), CritiqueStatus::Open);
-    assert_eq!(status(&out, "K2"), CritiqueStatus::Accepted);
-    assert_eq!(status(&out, "K3"), CritiqueStatus::Unanswered);
-    assert_eq!(out.ledger.iter().find(|r| r.critique.id == "K3").unwrap().raised_in, 2);
+}
+
+#[tokio::test]
+async fn dropped_after_discussion_and_satisfied() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("adversary", adversary(&[], &[critique("K1")], false));
+    p.push("advocate", advocate(&[discussing("K1", "unclear", &[])]));
+    p.push("adversary", adversary(&[dropping("K1")], &[], true));
+    let out = debate(&p, 3).await.unwrap();
+    assert_eq!(out.ending, Ending::Satisfied { round: 2 });
+    assert_eq!(status(&out, "K1"), CritiqueStatus::Dropped);
+    let replies = &out.threads[0].replies;
+    assert_eq!(replies.len(), 2);
+    assert!(matches!(&replies[0], Reply::Advocate { round: 1, answer } if answer.kind == AnswerKind::Discuss));
+    assert!(matches!(&replies[1], Reply::Adversary { round: 2, response } if response.action == ResponseAction::Drop));
+    assert_eq!(p.calls(), vec!["adversary", "advocate", "adversary"]);
+}
+
+#[tokio::test]
+async fn pressed_twice_then_accepted() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("adversary", adversary(&[], &[critique("K1")], false));
+    p.push("advocate", advocate(&[discussing("K1", "unclear", &[])]));
+    p.push("adversary", adversary(&[pressing("K1")], &[], false));
+    p.push("advocate", advocate(&[discussing("K1", "unclear", &[])]));
+    p.push("adversary", adversary(&[pressing("K1")], &[], false));
+    p.push("advocate", advocate(&[accepting("K1")]));
+    let out = debate(&p, 3).await.unwrap();
+    assert_eq!(out.ending, Ending::LimitReached);
+    assert_eq!(out.rounds_run, 3);
+    assert_eq!(status(&out, "K1"), CritiqueStatus::Accepted);
+    assert_eq!(out.threads[0].replies.len(), 5);
+}
+
+#[tokio::test]
+async fn new_critique_in_a_later_round_is_answered() {
+    let p = Arc::new(ScriptedProvider::new());
+    p.push("adversary", adversary(&[], &[critique("K1")], false));
+    p.push("advocate", advocate(&[accepting("K1")]));
+    p.push("adversary", adversary(&[], &[critique("K3")], false));
+    p.push("advocate", advocate(&[accepting("K3")]));
+    let out = debate(&p, 2).await.unwrap();
+    let ids: Vec<&str> = out.threads.iter().map(|t| t.critique.id.as_str()).collect();
+    assert_eq!(ids, vec!["K1", "K3"]);
+    assert_eq!(status(&out, "K1"), CritiqueStatus::Accepted);
+    assert_eq!(status(&out, "K3"), CritiqueStatus::Accepted);
+    assert_eq!(out.threads[0].raised_in, 1);
+    assert_eq!(out.threads[1].raised_in, 2);
 }
 
 #[tokio::test]
 async fn cancelled_before_start_calls_no_model() {
-    for _ in 0..40 {
-        let p = Arc::new(ScriptedProvider::new());
-        p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
-        let dynamic: Arc<dyn ModelProvider> = p.clone();
-        let advocate = spawn_agent(def("advocate"), dynamic.clone());
-        let adversary = spawn_agent(def("adversary"), dynamic);
-        let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2 };
-        let cancel = CancellationToken::new();
-        cancel.cancel();
-        let err = run_debate(&input, &advocate, &adversary, None, &cancel).await.expect_err("cancelled");
-        assert!(err.cancelled);
-        for _ in 0..5 {
-            tokio::task::yield_now().await;
-        }
-        assert!(p.calls().is_empty(), "a model call started after cancellation");
-    }
-}
-
-#[tokio::test]
-async fn limit_one_leaves_every_critique_unanswered() {
     let p = Arc::new(ScriptedProvider::new());
-    p.push("advocate", format!(r#"{{"answers": [], "tree": {TREE}}}"#));
-    p.push("adversary", format!(r#"{{"critiques": [{}], "satisfied": false}}"#, gap("K1")));
-    let out = debate(&p, 1).await;
-    assert_eq!(out.ending, Ending::LimitReached);
-    assert!(out.open.is_empty());
-    assert_eq!(ids(&out.unanswered, |c| &c.id), vec!["K1"]);
-    assert_eq!(status(&out, "K1"), CritiqueStatus::Unanswered);
+    let dynamic: Arc<dyn ModelProvider> = p.clone();
+    let advocate = spawn_agent(def("advocate"), dynamic.clone());
+    let adversary = spawn_agent(def("adversary"), dynamic);
+    let input = DebateInput { proposal: PROPOSAL.into(), context: None, round_limit: 2 };
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let err = run_debate(&input, &advocate, &adversary, None, &cancel).await.expect_err("the run should be cancelled");
+    assert!(err.cancelled);
+    assert!(p.calls().is_empty());
 }

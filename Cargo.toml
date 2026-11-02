@@ -2,7 +2,7 @@
 name = "sedcontra"
 version = "0.1.0"
 edition = "2024"
-description = "Adversarial cross-examination of an agent's proposal: an advocate reconstructs its argument, an adversary critiques it."
+description = "Adversarial cross-examination of an agent's proposal: an adversary critiques its argument, an advocate answers from the proposal's own words."
 
 [lib]
 name = "sedcontra"

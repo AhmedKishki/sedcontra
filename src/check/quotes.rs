@@ -1,6 +1,11 @@
 //! Finds quotes in the proposal word for word, with whitespace normalised.
 
-use crate::model::Span;
+/// Byte offsets into the original proposal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
 
 pub struct QuoteIndex {
     normalised: String,

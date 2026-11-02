@@ -3,7 +3,7 @@
 ## Code
 
 - Every change keeps to the Constraints in SPEC.md.
-- Keep the core, meaning the data model, the debate loop and the tree checks, free of any one provider, front end, analyzer or renderer. Add a provider behind `ModelProvider`, an analyzer behind `Analyzer`, and a renderer or front end beside the existing ones, so that each part can change without touching the core.
+- Keep the core, meaning the data model, the debate loop and the checks, free of any one provider, front end or renderer. Add a provider behind `ModelProvider`, and a renderer or front end beside the existing ones, so that each part can change without touching the core.
 - Put each configurable default and each provider parameter in `config/default.toml`, never in code or prompts. A fixed limit that stays in code is a named constant whose doc comment gives its reason, as `MAX_ROUNDS` does.
 - An agent file in `agents/` holds only its prompt, so that the configuration alone decides which model runs it.
 - Keep the advocate and the adversary isolated: each sees only the messages the orchestrator sends it, and neither reads the other's state.
@@ -11,7 +11,7 @@
 - Return errors instead of panicking.
   - Use `thiserror` for an error whose cases a caller tells apart, and `anyhow` with context elsewhere.
   - Use `unwrap` only in tests and test support, and `expect` only on an invariant the code guarantees, with the invariant as its message.
-- Name things with SPEC.md's terms, such as claim, inference, place, stub, critique and ledger, so that the code, the prompts and the docs read alike.
+- Name things with SPEC.md's terms, such as proposal, step, place, critique, answer, response and thread, so that the code, the prompts and the docs read alike.
 - Write a comment only for a reason or an invariant the code cannot show, as a full sentence. Open each module root with a `//!` line saying what the module does.
 - Keep `cargo clippy --all-targets` free of warnings.
 - Match the layout of the surrounding code. Do not run `cargo fmt` over the tree: the project has no rustfmt configuration, so it would rewrite unrelated lines.
@@ -28,13 +28,13 @@
 
 - Do not use test-driven development, even when a skill prescribes it. Code that compiles counts as done.
 - Write tests only where compiling code can still produce a wrong report without a visible error:
-  - the tree checks, especially loop detection and the word-for-word quote check;
-  - the analyzers, on hand-built trees;
-  - the ending of the debate: the early stop at the first satisfied adversary turn and the split into open and unanswered critiques;
+  - the quote check, word for word with whitespace normalised;
+  - the completeness checks: every critique answered once, every discussed critique responded to once, no critique id reused, and a satisfied turn that presses or raises nothing;
+  - the ending of the debate: the early stop at the first satisfied adversary turn and the split into accepted, dropped and open critiques;
   - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
 - Put each area's tests in one file under `tests/`. A test that needs a model drives it with `ScriptedProvider`, never the network or a real key.
 - Run `cargo test` before committing a change that touches a tested area.
-- Check behaviour against a live model with `sedcontra eval`, not with a test.
+- Check behaviour against a live model with `sedcontra run` on a proposal kept under `eval/`, not with a test.
 
 ## Repository
 

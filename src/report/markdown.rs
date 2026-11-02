@@ -2,192 +2,99 @@
 
 use std::fmt::Write;
 
-use super::{Report, render_argdown};
-use crate::analyze::Finding;
-use crate::model::{AdversaryTurn, AdvocateTurn, Answer, Critique, CritiqueStatus, Ending, Tree, Turn};
+use super::Report;
+use crate::model::{
+    AdversaryTurn, AdvocateTurn, Answer, AnswerKind, CritiqueStatus, Ending, Ground, Reply, ResponseAction, Thread, Turn,
+};
 
 pub fn render_markdown(report: &Report) -> String {
     let mut out = String::new();
-    let tree = &report.final_tree.tree;
 
     let _ = writeln!(out, "# Cross-examination report\n");
     let _ = writeln!(out, "Run `{}`, record in `{}`.\n", report.run_id, report.record_dir.display());
 
     let _ = writeln!(out, "## Ending\n");
+    let open = report.threads.iter().filter(|t| t.status == CritiqueStatus::Open).count();
     let ending = match report.ending {
         Ending::Satisfied { round } => format!(
-            "The adversary was satisfied in round {round} of at most {}: it could show no critique of the final tree that meets explanatory-critique.",
+            "The adversary was satisfied in round {round} of at most {}: it had nothing to press and nothing to raise.",
             report.round_limit
         ),
+        Ending::LimitReached if open == 0 => {
+            format!("The round limit of {} was reached with every critique settled.", report.round_limit)
+        }
         Ending::LimitReached => format!(
-            "The round limit of {} was reached with {} open and {} unanswered critiques. Open critiques were argued by both sides. Unanswered critiques were raised in the adversary's last turn, and the advocate had no turn to examine them.",
+            "The round limit of {} was reached with {open} open {}, which both sides argued and neither yielded.",
             report.round_limit,
-            report.open.len(),
-            report.unanswered.len()
+            if open == 1 { "critique" } else { "critiques" }
         ),
     };
     let _ = writeln!(out, "{ending}\n\nThis describes how the debate ended. It is not a verdict on the proposal.\n");
 
     let _ = writeln!(out, "## Critique ledger\n");
-    if report.ledger.is_empty() {
+    if report.threads.is_empty() {
         let _ = writeln!(out, "None.\n");
     } else {
-        let _ = writeln!(out, "| Critique | Kind | Target | Raised in | Status |\n| --- | --- | --- | --- | --- |");
-        for row in &report.ledger {
+        let _ = writeln!(out, "| Critique | Kind | Place | Raised in | Status |\n| --- | --- | --- | --- | --- |");
+        for thread in &report.threads {
+            let place = thread.critique.places.first().map(|p| shorten(p)).unwrap_or_default();
             let _ = writeln!(
                 out,
                 "| {} | {} | {} | {} | {} |",
-                row.critique.id,
-                row.critique.target.kind(),
-                row.critique.target.describe(),
-                row.raised_in,
-                status_label(row.status)
+                thread.critique.id,
+                thread.critique.kind,
+                place,
+                thread.raised_in,
+                status_label(thread.status)
             );
         }
         out.push('\n');
     }
 
-    let _ = writeln!(out, "## Final tree\n\n```argdown\n{}```\n", render_argdown(tree));
-    let _ = writeln!(out, "### Places\n");
-    for claim in &tree.claims {
-        let source = match &claim.origin {
-            Some(origin) => format!(
-                "added in round {} for {}{}",
-                origin.round,
-                origin.critique,
-                if claim.backed_by_context { " (backed by context)" } else { "" }
-            ),
-            None => quotes(&claim.places),
-        };
-        let _ = writeln!(out, "- **{}** {}: {}", claim.id, one_line(&claim.text), source);
+    let sections = [
+        (CritiqueStatus::Accepted, "Accepted critiques"),
+        (CritiqueStatus::Dropped, "Dropped critiques"),
+        (CritiqueStatus::Open, "Open critiques"),
+    ];
+    for (status, heading) in sections {
+        let _ = writeln!(out, "## {heading}\n");
+        let threads: Vec<&Thread> = report.threads.iter().filter(|t| t.status == status).collect();
+        if threads.is_empty() {
+            let _ = writeln!(out, "None.\n");
+        }
+        for thread in threads {
+            render_thread(&mut out, thread);
+        }
     }
-    for inference in &tree.inferences {
-        let source = match &inference.origin {
-            Some(origin) => format!("added in round {} for {}", origin.round, origin.critique),
-            None if inference.places.is_empty() => "no connective in the text".into(),
-            None => quotes(&inference.places),
-        };
-        let _ = writeln!(
-            out,
-            "- **{}** {} → {}: {}",
-            inference.id,
-            inference.premises.join(", "),
-            inference.conclusion,
-            source
-        );
-    }
-    out.push('\n');
-
-    let _ = writeln!(out, "## Changes\n");
-    if report.changes.is_empty() {
-        let _ = writeln!(out, "None.\n");
-    }
-    for change in &report.changes {
-        let _ = writeln!(
-            out,
-            "- **{}** ({}, {} in round {}): {} The advocate: {}{}",
-            change.critique.id,
-            target_phrase(&change.critique),
-            kind_label(&change.answer),
-            change.round,
-            sentence(&change.critique.point),
-            sentence(&change.answer.reasons),
-            change_effects(&change.critique, tree)
-        );
-    }
-    if !report.changes.is_empty() {
-        out.push('\n');
-    }
-
-    let _ = writeln!(out, "## Open critiques\n");
-    if report.open.is_empty() {
-        let _ = writeln!(out, "None.\n");
-    }
-    for open in &report.open {
-        let _ = writeln!(out, "### {}: {}\n", open.critique.id, target_phrase(&open.critique));
-        let _ = writeln!(out, "- Critique: {}", one_line(&open.critique.point));
-        let _ = writeln!(out, "- Support: {}", one_line(&open.critique.support));
-        let _ = writeln!(out, "- The advocate ({}): {}", kind_label(&open.answer), one_line(&open.answer.reasons));
-        let _ = writeln!(out, "- The adversary maintained it: {}\n", one_line(&open.response.reasons));
-    }
-
-    let _ = writeln!(out, "## Unanswered critiques\n");
-    if report.unanswered.is_empty() {
-        let _ = writeln!(out, "None.\n");
-    }
-    for critique in &report.unanswered {
-        let _ = writeln!(
-            out,
-            "- **{}** ({}): {} Support: {}",
-            critique.id,
-            target_phrase(critique),
-            sentence(&critique.point),
-            one_line(&critique.support)
-        );
-    }
-    if !report.unanswered.is_empty() {
-        out.push('\n');
-    }
-
-    let _ = writeln!(out, "## Structural findings\n");
-    render_findings(&mut out, &report.findings, tree);
 
     let _ = writeln!(out, "## Transcript\n");
     out.push_str(&render_transcript(&report.transcript));
     out
 }
 
-fn render_findings(out: &mut String, findings: &[Finding], tree: &Tree) {
-    let text_of = |id: &str| tree.claims.iter().find(|c| c.id == id).map(|c| one_line(&c.text)).unwrap_or_default();
-
-    let _ = writeln!(out, "### Restatements\n");
-    let restatements: Vec<_> = findings
-        .iter()
-        .filter_map(|f| match f {
-            Finding::Restatement { claim, quotes: q, .. } => Some((claim, q)),
-            _ => None,
-        })
-        .collect();
-    if restatements.is_empty() {
-        let _ = writeln!(out, "None.");
+fn render_thread(out: &mut String, thread: &Thread) {
+    let critique = &thread.critique;
+    let _ = writeln!(out, "### {} ({}), raised in round {}\n", critique.id, critique.kind, thread.raised_in);
+    for place in &critique.places {
+        let _ = writeln!(out, "> {}\n", one_line(place));
     }
-    for (claim, q) in restatements {
-        let _ = writeln!(out, "- **{claim}** is stated {} times: {}. Keep one.", q.len(), quotes(q));
-    }
-    out.push('\n');
-
-    let _ = writeln!(out, "### Uncovered text\n");
-    let uncovered: Vec<_> = findings
-        .iter()
-        .filter_map(|f| match f {
-            Finding::Uncovered { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect();
-    if uncovered.is_empty() {
-        let _ = writeln!(out, "None.");
-    }
-    for text in uncovered {
-        let _ = writeln!(out, "- \"{}\"", one_line(text));
-    }
-    out.push('\n');
-
-    let _ = writeln!(out, "### Stubs\n");
-    let mut stubs: Vec<_> = findings
-        .iter()
-        .filter_map(|f| match f {
-            Finding::Stub { claims, prune } => Some((claims, *prune)),
-            _ => None,
-        })
-        .collect();
-    stubs.sort_by_key(|(_, prune)| !prune);
-    if stubs.is_empty() {
-        let _ = writeln!(out, "None.");
-    }
-    for (claims, prune) in stubs {
-        let label = if prune { "Prune suggestion" } else { "Separate line of argument" };
-        let listed: Vec<String> = claims.iter().map(|id| format!("{id} ({})", text_of(id))).collect();
-        let _ = writeln!(out, "- {label}: {}", listed.join("; "));
+    let _ = writeln!(out, "{}\n\nSupport: {}\n", sentence(&critique.point), one_line(&critique.support));
+    for reply in &thread.replies {
+        match reply {
+            Reply::Advocate { round, answer } => {
+                let _ = writeln!(out, "- Advocate, round {round}, {}: {}", answer_label(answer), one_line(&answer.reasons));
+                write_quotes(out, &answer.quotes);
+            }
+            Reply::Adversary { round, response } => {
+                let _ = writeln!(
+                    out,
+                    "- Adversary, round {round}, {}: {}",
+                    action_label(response.action),
+                    one_line(&response.reasons)
+                );
+                write_quotes(out, &response.quotes);
+            }
+        }
     }
     out.push('\n');
 }
@@ -197,100 +104,68 @@ pub fn render_transcript(turns: &[Turn]) -> String {
     for turn in turns {
         let _ = writeln!(out, "### Round {}: {}\n", turn.round(), turn.role());
         match turn {
-            Turn::Advocate { turn, .. } => render_advocate(&mut out, turn),
             Turn::Adversary { turn, .. } => render_adversary(&mut out, turn),
+            Turn::Advocate { turn, .. } => render_advocate(&mut out, turn),
         }
         out.push('\n');
     }
     out
 }
 
-fn render_advocate(out: &mut String, turn: &AdvocateTurn) {
-    for answer in &turn.answers {
-        let _ = writeln!(out, "- Answer to {}: {}. {}", answer.critique, kind_label(answer), one_line(&answer.reasons));
-    }
-    if !turn.answers.is_empty() {
-        out.push('\n');
-    }
-    for claim in &turn.tree.claims {
-        let _ = writeln!(out, "- {}: {}", claim.id, one_line(&claim.text));
-    }
-    for inference in &turn.tree.inferences {
-        let _ = writeln!(out, "- {}: {} → {}", inference.id, inference.premises.join(", "), inference.conclusion);
-    }
-    let _ = writeln!(out, "- Conclusions: {}", turn.tree.conclusions.join(", "));
-}
-
 fn render_adversary(out: &mut String, turn: &AdversaryTurn) {
     for response in &turn.responses {
-        let action = match response.action {
-            crate::model::ResponseAction::Drop => "dropped",
-            crate::model::ResponseAction::Maintain => "maintained",
-        };
-        let _ = writeln!(out, "- {} {action}. {}", response.critique, one_line(&response.reasons));
+        let _ = writeln!(out, "- **{}** {}: {}", response.critique, action_label(response.action), one_line(&response.reasons));
+        write_quotes(out, &response.quotes);
     }
     for critique in &turn.critiques {
-        let _ = writeln!(
-            out,
-            "- {} ({}): {} Support: {}",
-            critique.id,
-            target_phrase(critique),
-            sentence(&critique.point),
-            one_line(&critique.support)
-        );
+        let places: Vec<String> = critique.places.iter().map(|p| format!("“{}”", one_line(p))).collect();
+        let _ = writeln!(out, "- **{}** ({}) at {}: {}", critique.id, critique.kind, places.join(", "), sentence(&critique.point));
+        let _ = writeln!(out, "  Support: {}", one_line(&critique.support));
     }
     let _ = writeln!(out, "- Satisfied: {}", if turn.satisfied { "yes" } else { "no" });
 }
 
-/// What a change left in the final tree: the claims and inferences it added, and a premise it removed.
-fn change_effects(critique: &Critique, tree: &Tree) -> String {
-    let from_critique = |origin: &Option<crate::model::Origin>| origin.as_ref().is_some_and(|o| o.critique == critique.id);
-    let mut effects: Vec<String> = tree
-        .claims
-        .iter()
-        .filter(|c| from_critique(&c.origin))
-        .map(|c| format!("added {} ({})", c.id, one_line(&c.text)))
-        .chain(tree.inferences.iter().filter(|i| from_critique(&i.origin)).map(|i| {
-            format!("added {} ({} → {})", i.id, i.premises.join(", "), i.conclusion)
-        }))
-        .collect();
-    if let crate::model::Target::Superfluous { inference, premise } = &critique.target {
-        let removed = tree.inferences.iter().find(|i| &i.id == inference).is_some_and(|i| !i.premises.contains(premise));
-        if removed {
-            effects.push(format!("removed {premise} from {inference}"));
-        }
+fn render_advocate(out: &mut String, turn: &AdvocateTurn) {
+    for answer in &turn.answers {
+        let _ = writeln!(out, "- **{}** {}: {}", answer.critique, answer_label(answer), one_line(&answer.reasons));
+        write_quotes(out, &answer.quotes);
     }
-    if effects.is_empty() { String::new() } else { format!(" Effect: {}.", effects.join("; ")) }
+}
+
+fn write_quotes(out: &mut String, quotes: &[String]) {
+    for quote in quotes {
+        let _ = writeln!(out, "  > {}", one_line(quote));
+    }
 }
 
 fn status_label(status: CritiqueStatus) -> &'static str {
     match status {
         CritiqueStatus::Accepted => "accepted",
-        CritiqueStatus::Adapted => "adapted",
-        CritiqueStatus::DroppedAfterRejection => "dropped after rejection",
+        CritiqueStatus::Dropped => "dropped",
         CritiqueStatus::Open => "open",
-        CritiqueStatus::Unanswered => "unanswered",
     }
 }
 
-fn kind_label(answer: &Answer) -> String {
-    use crate::model::{AnswerKind, Ground};
+fn action_label(action: ResponseAction) -> &'static str {
+    match action {
+        ResponseAction::Drop => "dropped",
+        ResponseAction::Press => "pressed",
+    }
+}
+
+fn answer_label(answer: &Answer) -> &'static str {
     match (answer.kind, answer.ground) {
-        (AnswerKind::Accept, _) => "accepted".into(),
-        (AnswerKind::Adapt, _) => "adapted".into(),
-        (AnswerKind::Reject, Some(Ground::Stated)) => "rejected: stated".into(),
-        (AnswerKind::Reject, Some(Ground::Follows)) => "rejected: follows".into(),
-        (AnswerKind::Reject, Some(Ground::CounterFails)) => "rejected: counter_fails".into(),
-        (AnswerKind::Reject, None) => "rejected".into(),
+        (AnswerKind::Accept, _) => "accepted",
+        (AnswerKind::Discuss, Some(Ground::Misreads)) => "discussed (misreads)",
+        (AnswerKind::Discuss, Some(Ground::Unclear)) => "discussed (unclear)",
+        (AnswerKind::Discuss, None) => "discussed",
     }
 }
 
-fn target_phrase(critique: &Critique) -> String {
-    format!("{} on {}", critique.target.kind(), critique.target.describe())
-}
-
-fn quotes(places: &[String]) -> String {
-    places.iter().map(|p| format!("\"{}\"", one_line(p))).collect::<Vec<_>>().join("; ")
+/// The first place of a critique, cut for the ledger table; the sections quote it in full.
+fn shorten(text: &str) -> String {
+    let line = one_line(text);
+    if line.chars().count() > 80 { line.chars().take(79).collect::<String>() + "…" } else { line }
 }
 
 fn one_line(text: &str) -> String {

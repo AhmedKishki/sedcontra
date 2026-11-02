@@ -9,7 +9,7 @@ use sedcontra::config::Config;
 use sedcontra::run::{Environment, RunFailure, cross_examine};
 use sedcontra::secret;
 
-/// Adversarial cross-examination of a proposal: an advocate reconstructs its argument, an adversary critiques it.
+/// Adversarial cross-examination of a proposal: an adversary critiques its argument, an advocate answers from the proposal's own words.
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
@@ -34,6 +34,12 @@ enum Cmd {
         /// The round limit of this run, 1–10, in place of the configuration's.
         #[arg(long)]
         rounds: Option<u32>,
+        /// A prompt file for the adversary, in place of the layered lookup.
+        #[arg(long)]
+        adversary: Option<PathBuf>,
+        /// A prompt file for the advocate, in place of the layered lookup.
+        #[arg(long)]
+        advocate: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = Format::Md)]
         format: Format,
         /// Write the report here instead of stdout.
@@ -44,23 +50,6 @@ enum Cmd {
     Key {
         #[command(subcommand)]
         action: KeyAction,
-    },
-    /// Score the tool against a local copy of the Arguinas test split.
-    Eval {
-        /// The dataset file, e.g. 260331-Arguinas-Test-v2.json.
-        dataset: PathBuf,
-        /// Score only the first N records.
-        #[arg(long)]
-        limit: Option<usize>,
-        /// Records cross-examined at once.
-        #[arg(long, default_value_t = 4)]
-        concurrency: usize,
-        /// The round limit of every record, 1–10, in place of the configuration's.
-        #[arg(long, default_value_t = 10)]
-        rounds: u32,
-        /// The JSON-lines file for per-record scores; defaults to the runs directory.
-        #[arg(long)]
-        out: Option<PathBuf>,
     },
 }
 
@@ -78,7 +67,6 @@ enum KeyAction {
 enum Format {
     Md,
     Json,
-    Argdown,
 }
 
 #[tokio::main]
@@ -86,7 +74,7 @@ async fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Serve => {
-            let result = match Environment::load(cli.config.as_deref()) {
+            let result = match Environment::load(cli.config.as_deref(), None, None) {
                 Ok(env) => sedcontra::mcp::serve(env).await,
                 Err(e) => Err(e),
             };
@@ -98,11 +86,9 @@ async fn main() -> ExitCode {
                 }
             }
         }
-        Cmd::Run { proposal, context, rounds, format, out } => {
-            run(cli.config.as_deref(), &proposal, context.as_deref(), rounds, format, out.as_deref()).await
-        }
-        Cmd::Eval { dataset, limit, concurrency, rounds, out } => {
-            eval(cli.config.as_deref(), &dataset, limit, concurrency, rounds, out).await
+        Cmd::Run { proposal, context, rounds, adversary, advocate, format, out } => {
+            let prompts = (adversary.as_deref(), advocate.as_deref());
+            run(cli.config.as_deref(), &proposal, context.as_deref(), rounds, prompts, format, out.as_deref()).await
         }
         Cmd::Key { action: KeyAction::Set { provider } } => set_key(cli.config.as_deref(), &provider),
     }
@@ -132,49 +118,20 @@ fn set_key(config: Option<&Path>, provider: &str) -> ExitCode {
     }
 }
 
-async fn eval(config: Option<&Path>, dataset: &Path, limit: Option<usize>, concurrency: usize, rounds: u32, out: Option<PathBuf>) -> ExitCode {
-    let mut env = match Environment::load(config) {
-        Ok(env) => env,
-        Err(e) => {
-            eprintln!("sedcontra: {e:#}");
-            return ExitCode::from(1);
-        }
-    };
-    env.config.rounds = rounds;
-    let out = out.unwrap_or_else(|| {
-        env.config.runs_dir().join(format!("eval-{}.jsonl", chrono::Local::now().format("%Y%m%d-%H%M%S")))
-    });
-    let cancel = CancellationToken::new();
-    let on_interrupt = cancel.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            on_interrupt.cancel();
-        }
-        // A second Ctrl-C stops waiting for the cancelled work to wind down.
-        if tokio::signal::ctrl_c().await.is_ok() {
-            std::process::exit(130);
-        }
-    });
-
-    match sedcontra::eval::run_eval(env, dataset, limit, concurrency, &out, cancel).await {
-        Ok(scores) => {
-            print!("{}", sedcontra::eval::summarize(&scores));
-            eprintln!("per-record scores: {}", out.display());
-            ExitCode::SUCCESS
-        }
-        Err(e) => {
-            eprintln!("sedcontra: {e:#}");
-            ExitCode::from(1)
-        }
-    }
-}
-
-async fn run(config: Option<&Path>, proposal: &Path, context: Option<&Path>, rounds: Option<u32>, format: Format, out: Option<&Path>) -> ExitCode {
+async fn run(
+    config: Option<&Path>,
+    proposal: &Path,
+    context: Option<&Path>,
+    rounds: Option<u32>,
+    prompts: (Option<&Path>, Option<&Path>),
+    format: Format,
+    out: Option<&Path>,
+) -> ExitCode {
     let fail = |message: String| {
         eprintln!("sedcontra: {message}");
         ExitCode::from(1)
     };
-    let mut env = match Environment::load(config) {
+    let mut env = match Environment::load(config, prompts.0, prompts.1) {
         Ok(env) => env,
         Err(e) => return fail(format!("{e:#}")),
     };
@@ -207,7 +164,6 @@ async fn run(config: Option<&Path>, proposal: &Path, context: Option<&Path>, rou
             let text = match format {
                 Format::Md => output.markdown,
                 Format::Json => serde_json::to_string_pretty(&output.json).unwrap_or_default(),
-                Format::Argdown => output.argdown,
             };
             match out {
                 Some(path) => match std::fs::write(path, text) {

@@ -1,72 +1,40 @@
-//! The data the advocate, the adversary and the orchestrator exchange.
-
-use std::collections::BTreeMap;
+//! The data the adversary, the advocate and the orchestrator exchange.
 
 use serde::{Deserialize, Serialize};
 
-pub type ClaimId = String;
-pub type InferenceId = String;
 pub type CritiqueId = String;
 
-/// Where a claim or inference added during the debate came from.
+/// A critique by the adversary against a step or a stretch of the proposal.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Origin {
-    pub round: u32,
-    pub critique: CritiqueId,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Claim {
-    pub id: ClaimId,
-    pub text: String,
+pub struct Critique {
+    pub id: CritiqueId,
+    /// As the discipline names it: gap, circularity, conflict, shift or unused.
+    #[serde(default)]
+    pub kind: String,
     #[serde(default)]
     pub places: Vec<String>,
     #[serde(default)]
-    pub origin: Option<Origin>,
+    pub point: String,
     #[serde(default)]
-    pub backed_by_context: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Inference {
-    pub id: InferenceId,
-    #[serde(default)]
-    pub premises: Vec<ClaimId>,
-    pub conclusion: ClaimId,
-    #[serde(default)]
-    pub places: Vec<String>,
-    #[serde(default)]
-    pub origin: Option<Origin>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct Tree {
-    #[serde(default)]
-    pub claims: Vec<Claim>,
-    #[serde(default)]
-    pub inferences: Vec<Inference>,
-    #[serde(default)]
-    pub conclusions: Vec<ClaimId>,
+    pub support: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AnswerKind {
     Accept,
-    Adapt,
-    Reject,
+    Discuss,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum Ground {
-    Stated,
-    Follows,
-    CounterFails,
+    Misreads,
+    Unclear,
 }
 
-/// The advocate's answer to one counter-proposal.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+/// The advocate's answer to one critique.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Answer {
     pub critique: CritiqueId,
     pub kind: AnswerKind,
@@ -78,72 +46,31 @@ pub struct Answer {
     pub quotes: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct AdvocateTurn {
     #[serde(default)]
     pub answers: Vec<Answer>,
-    pub tree: Tree,
-}
-
-/// What a counter-proposal attacks, by kind of critique.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Target {
-    Gap { inference: InferenceId },
-    Superfluous { inference: InferenceId, premise: ClaimId },
-    /// `of` names a claim or an inference.
-    Reading { of: String },
-}
-
-impl Target {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Target::Gap { .. } => "gap",
-            Target::Superfluous { .. } => "superfluous",
-            Target::Reading { .. } => "reading",
-        }
-    }
-
-    pub fn describe(&self) -> String {
-        match self {
-            Target::Gap { inference } => inference.clone(),
-            Target::Superfluous { inference, premise } => format!("{premise} in {inference}"),
-            Target::Reading { of } => of.clone(),
-        }
-    }
-}
-
-/// A counter-proposal by the adversary.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Critique {
-    pub id: CritiqueId,
-    #[serde(flatten)]
-    pub target: Target,
-    #[serde(default)]
-    pub point: String,
-    #[serde(default)]
-    pub support: String,
-    #[serde(default)]
-    pub quotes: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ResponseAction {
     Drop,
-    Maintain,
+    Press,
 }
 
-/// The adversary's response to the advocate's answer.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+/// The adversary's response to an answer that discusses.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Response {
     pub critique: CritiqueId,
     pub action: ResponseAction,
     #[serde(default)]
     pub reasons: String,
+    #[serde(default)]
+    pub quotes: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct AdversaryTurn {
     #[serde(default)]
     pub responses: Vec<Response>,
@@ -156,38 +83,23 @@ pub struct AdversaryTurn {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum Turn {
-    Advocate { round: u32, turn: AdvocateTurn },
     Adversary { round: u32, turn: AdversaryTurn },
+    Advocate { round: u32, turn: AdvocateTurn },
 }
 
 impl Turn {
     pub fn round(&self) -> u32 {
         match self {
-            Turn::Advocate { round, .. } | Turn::Adversary { round, .. } => *round,
+            Turn::Adversary { round, .. } | Turn::Advocate { round, .. } => *round,
         }
     }
 
     pub fn role(&self) -> &'static str {
         match self {
-            Turn::Advocate { .. } => "advocate",
             Turn::Adversary { .. } => "adversary",
+            Turn::Advocate { .. } => "advocate",
         }
     }
-}
-
-/// Byte offsets into the original proposal.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-/// A tree that passed the checks, with every place located in the proposal.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CheckedTree {
-    pub tree: Tree,
-    pub claim_spans: BTreeMap<ClaimId, Vec<Span>>,
-    pub inference_spans: BTreeMap<InferenceId, Vec<Span>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -198,45 +110,35 @@ pub enum Ending {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum CritiqueStatus {
     Accepted,
-    Adapted,
-    DroppedAfterRejection,
+    Dropped,
     Open,
-    Unanswered,
 }
 
+/// What one side said about a critique after it was raised.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "side", rename_all = "lowercase")]
+pub enum Reply {
+    Advocate { round: u32, answer: Answer },
+    Adversary { round: u32, response: Response },
+}
+
+/// One critique with everything said about it, in order, and its status after the last turn.
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct LedgerRow {
+pub struct Thread {
     pub critique: Critique,
     pub raised_in: u32,
+    pub replies: Vec<Reply>,
     pub status: CritiqueStatus,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Change {
-    pub round: u32,
-    pub critique: Critique,
-    pub answer: Answer,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct OpenCritique {
-    pub critique: Critique,
-    pub answer: Answer,
-    pub response: Response,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DebateOutcome {
     pub turns: Vec<Turn>,
-    pub final_tree: CheckedTree,
     pub ending: Ending,
     pub rounds_run: u32,
     pub round_limit: u32,
-    pub ledger: Vec<LedgerRow>,
-    pub changes: Vec<Change>,
-    pub open: Vec<OpenCritique>,
-    pub unanswered: Vec<Critique>,
+    pub threads: Vec<Thread>,
 }
