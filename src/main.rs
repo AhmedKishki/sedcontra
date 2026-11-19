@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use tokio_util::sync::CancellationToken;
 
 use sedcontra::config::Config;
+use sedcontra::eval::{evaluate, load_cases, render_cases, render_scores};
 use sedcontra::run::{Environment, RunFailure, cross_examine};
 use sedcontra::secret;
 
@@ -54,6 +55,32 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Run cases with planted defects and score what the debate did with each defect.
+    Eval {
+        /// The folder of cases: each subfolder holds a proposal.md and a defects.toml.
+        cases: PathBuf,
+        /// How often each case runs, in place of the configuration's.
+        #[arg(long)]
+        repeat: Option<u32>,
+        /// How many runs proceed at once, in place of the configuration's.
+        #[arg(long)]
+        jobs: Option<usize>,
+        /// The round limit of each run, 1–10, in place of the configuration's.
+        #[arg(long)]
+        rounds: Option<u32>,
+        /// A prompt file for the adversary, in place of the layered lookup.
+        #[arg(long)]
+        adversary: Option<PathBuf>,
+        /// A prompt file for the advocate, in place of the layered lookup.
+        #[arg(long)]
+        advocate: Option<PathBuf>,
+        /// The folder for the scores and the run folders; defaults to eval/results/<time>.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Check the cases and list them without calling a model.
+        #[arg(long)]
+        list: bool,
+    },
     /// Manage provider API keys.
     Key {
         #[command(subcommand)]
@@ -99,6 +126,13 @@ async fn main() -> ExitCode {
             run(cli.config.as_deref(), &proposal, context.as_deref(), rounds, prompts, format, out.as_deref()).await
         }
         Cmd::Replay { record, out } => replay(&record, out).await,
+        Cmd::Eval { cases, repeat, jobs, rounds, adversary, advocate, out, list } => {
+            if list {
+                return list_cases(&cases);
+            }
+            let prompts = (adversary.as_deref(), advocate.as_deref());
+            eval(cli.config.as_deref(), &cases, repeat, jobs, rounds, prompts, out).await
+        }
         Cmd::Key { action: KeyAction::Set { provider } } => set_key(cli.config.as_deref(), &provider),
     }
 }
@@ -174,17 +208,7 @@ async fn run(
         Err(e) => return fail(format!("reading the context: {e}")),
     };
 
-    let cancel = CancellationToken::new();
-    let on_interrupt = cancel.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            on_interrupt.cancel();
-        }
-        // A second Ctrl-C stops waiting for the cancelled work to wind down.
-        if tokio::signal::ctrl_c().await.is_ok() {
-            std::process::exit(130);
-        }
-    });
+    let cancel = cancel_on_ctrl_c();
 
     match cross_examine(&env, proposal, context, None, cancel).await {
         Ok(output) => {
@@ -214,6 +238,78 @@ async fn run(
             eprintln!("cross-examination cancelled; run record: {}", record_dir.display());
             ExitCode::from(130)
         }
+    }
+}
+
+/// A token that the first Ctrl-C cancels, so that the running work winds down and records itself.
+fn cancel_on_ctrl_c() -> CancellationToken {
+    let cancel = CancellationToken::new();
+    let on_interrupt = cancel.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            on_interrupt.cancel();
+        }
+        // A second Ctrl-C stops waiting for the cancelled work to wind down.
+        if tokio::signal::ctrl_c().await.is_ok() {
+            std::process::exit(130);
+        }
+    });
+    cancel
+}
+
+fn list_cases(dir: &Path) -> ExitCode {
+    match load_cases(dir) {
+        Ok(cases) => {
+            print!("{}", render_cases(&cases));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("sedcontra: {e:#}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+async fn eval(
+    config: Option<&Path>,
+    cases_dir: &Path,
+    repeat: Option<u32>,
+    jobs: Option<usize>,
+    rounds: Option<u32>,
+    prompts: (Option<&Path>, Option<&Path>),
+    out: Option<PathBuf>,
+) -> ExitCode {
+    let fail = |message: String| {
+        eprintln!("sedcontra: {message}");
+        ExitCode::from(1)
+    };
+    let cases = match load_cases(cases_dir) {
+        Ok(cases) => cases,
+        Err(e) => return fail(format!("{e:#}")),
+    };
+    let mut env = match Environment::load(config, prompts.0, prompts.1) {
+        Ok(env) => env,
+        Err(e) => return fail(format!("{e:#}")),
+    };
+    if let Some(repeat) = repeat {
+        env.config.eval.repeat = repeat;
+    }
+    if let Some(jobs) = jobs {
+        env.config.eval.jobs = jobs;
+    }
+    if let Some(rounds) = rounds {
+        env.config.rounds = rounds;
+    }
+    let out = out.unwrap_or_else(|| {
+        PathBuf::from("eval").join("results").join(chrono::Local::now().format("%Y%m%d-%H%M%S").to_string())
+    });
+
+    match evaluate(env, cases, cases_dir, &out, cancel_on_ctrl_c()).await {
+        Ok(scores) => {
+            print!("{}", render_scores(&scores));
+            ExitCode::SUCCESS
+        }
+        Err(e) => fail(format!("{e:#}")),
     }
 }
 

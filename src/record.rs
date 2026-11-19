@@ -78,6 +78,11 @@ impl RunRecord {
         Ok(())
     }
 
+    /// Whether the folder holds an event log, which a run that failed before any model call lacks.
+    pub fn has_log(dir: &Path) -> bool {
+        dir.join(EVENT_LOG).exists()
+    }
+
     pub fn read_log(dir: &Path) -> anyhow::Result<Vec<LogLine>> {
         let path = dir.join(EVENT_LOG);
         let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;

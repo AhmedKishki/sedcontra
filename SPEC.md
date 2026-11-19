@@ -117,10 +117,19 @@ Both front ends are thin layers over the same core and write the same run record
 - It exits with 0 whenever a report was produced, whatever the ending, and with a non-zero code on failure, printing the reason to stderr.
 - This is the background form: the caller's harness starts the process in the background and reads the report when it exits. Harnesses such as Claude Code notify the agent when a background process exits.
 - `replay <run folder> [--out <folder>]` runs the debate loop again on the model replies a run record holds, without a model and without a key, and compares the outcome with the recorded one. It prints `identical` and exits with 0, or prints the parts that differ, among the status, the ending, the rounds, the threads and the transcript, and exits with 1. A change to the checks or the report is tested against recorded runs this way. A record written before the event log existed replays from its turn files, which hold only the replies that passed, so a failed run from then replays to a different failure.
+- `eval <cases folder> [--repeat <n>] [--jobs <n>] [--rounds <n>] [--adversary <file>] [--advocate <file>] [--out <folder>] [--list]` runs an evaluation and writes `scores.json`, `scores.md` and the run folders into `--out`, which is `eval/results/<time>` by default. The configuration sets how often each case runs and how many runs proceed at once. `--list` checks the cases and lists them without calling a model.
 
 ### Run record
 
 Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), an event log, the status (running, done, failed or cancelled) and the report in both renderings. The event log, `events.jsonl`, takes one line for every model reply as it arrives, with the agent, whether the reply parsed, was cut off or was not JSON, the finish reason, the usage the provider reported and the content, and one line for every reply that failed its checks, with the failures. The usage is kept as the provider reports it, so the core names no provider's fields. It also holds the version of the binary and the commit that was checked out when the binary was built, which cannot show uncommitted changes. Because every turn is written when it completes, a later checkpoint-and-resume feature can restart a run from its last turn.
+
+### Evaluation
+
+An evaluation measures what the debate does with defects planted at known places. It reads cases from a folder. A case is a folder with `proposal.md`, an optional `context.md` and `defects.toml`, which lists each planted defect with its kind and its places: the exact quotes from the proposal where a critique of it must land. A control case plants nothing and says so with an empty `defects.toml`. A case whose place does not occur in its proposal is refused.
+
+`eval` runs every case several times through the cross-examination the front ends use, because a model's replies vary between runs. It scores each run by one rule: a critique lands on a defect when one of its places overlaps one of the defect's places in the proposal. A defect on which nothing lands is missed. Otherwise the strongest status among the critiques that land stands for it: accepted before open, and open before dropped. The scores count, for each defect, the runs in which it was missed, accepted, open or dropped, and the runs in which a landing critique named its kind. For each case they count the failed runs, the critiques, the replies that failed a check, the model calls and the usage.
+
+A critique that lands on no planted defect is counted with its status and judged nowhere, because whether it is right needs a reader. The scores therefore say what happened to the planted defects and never how many critiques were false.
 
 ### The core and the swappable parts
 

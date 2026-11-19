@@ -10,9 +10,6 @@ use super::{ChatRequest, Completion, ModelProvider, ProviderError};
 use crate::event::{CallEvent, CallOutcome, LogLine};
 use crate::record::RunRecord;
 
-/// The name of the event log in a run folder, which `RunRecord` keeps private.
-const EVENT_LOG: &str = "events.jsonl";
-
 struct Replies {
     queue: VecDeque<CallEvent>,
     served: usize,
@@ -26,7 +23,7 @@ pub struct ReplayProvider {
 
 impl ReplayProvider {
     pub fn from_record(dir: &Path) -> anyhow::Result<Self> {
-        let calls: Vec<CallEvent> = if dir.join(EVENT_LOG).exists() {
+        let calls: Vec<CallEvent> = if RunRecord::has_log(dir) {
             RunRecord::read_log(dir)?
                 .into_iter()
                 .filter_map(|line| match line {

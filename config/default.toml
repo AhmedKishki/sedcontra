@@ -29,3 +29,9 @@ reasoning_effort = "high"
 [providers.deepseek]
 base_url = "https://api.deepseek.com"
 api_key_env = "DEEPSEEK_API_KEY"  # CI fallback, read only when no key file exists
+
+# How an evaluation runs its cases. A model's replies vary between runs, so each case runs
+# `repeat` times; `jobs` runs proceed at once, since separate runs share nothing.
+[eval]
+repeat = 3
+jobs = 4

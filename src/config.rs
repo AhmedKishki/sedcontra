@@ -1,4 +1,4 @@
-//! The configuration: models, providers, round limit and the runs directory.
+//! The configuration: models, providers, round limit, the runs directory and how an evaluation runs.
 //!
 //! The built-in defaults live in `config/default.toml`, not in code; a user file overrides them
 //! table by table. No agent and no line of code names a provider: each agent's model comes from
@@ -20,6 +20,14 @@ pub struct Config {
     pub runs_dir: Option<PathBuf>,
     pub models: BTreeMap<String, ModelSettings>,
     pub providers: BTreeMap<String, ProviderConfig>,
+    pub eval: EvalSettings,
+}
+
+/// How an evaluation runs its cases: the `[eval]` table.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EvalSettings {
+    pub repeat: u32,
+    pub jobs: usize,
 }
 
 /// The model an agent runs on: its `[models.<agent>]` table.
