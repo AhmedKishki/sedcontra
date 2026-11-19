@@ -1,0 +1,4 @@
+[[defect]]
+kind = "shift"
+places = ["so the index is free"]
+note = "The word free means unused in the premise and costless in the conclusion."

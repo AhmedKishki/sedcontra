@@ -1,0 +1,4 @@
+[[defect]]
+kind = "gap"
+places = ["The page's time comes from the query"]
+note = "Nothing says how much of the page's 4 seconds the query takes."

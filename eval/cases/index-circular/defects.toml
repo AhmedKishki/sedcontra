@@ -1,0 +1,4 @@
+[[defect]]
+kind = "circularity"
+places = ["Adding the index is the right fix for this page, because the right fix for this page is to add the index."]
+note = "The premise restates the conclusion."

@@ -1,0 +1,4 @@
+[[defect]]
+kind = "gap"
+places = ["so we should move to Postgres"]
+note = "Nothing says the database causes the slowness."

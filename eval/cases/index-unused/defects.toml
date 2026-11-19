@@ -1,0 +1,4 @@
+[[defect]]
+kind = "unused"
+places = ["The `orders` table was created in 2019, when the shop moved its records out of a spreadsheet. The team that built it has since moved to the payments group."]
+note = "No step uses the table's history."

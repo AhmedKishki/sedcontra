@@ -1,0 +1,4 @@
+[[defect]]
+kind = "conflict"
+places = ["The change needs no extra disk space"]
+note = "The third paragraph says the index takes 1.1 GB."
