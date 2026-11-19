@@ -178,7 +178,8 @@ fn shaped<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Vec<String>
 }
 
 /// One turn with one retry: a reply that fails its checks is sent back with the failures. Every
-/// model reply and every rejection goes to the events sender as it happens.
+/// model reply goes to the events sender when the agent answers, and every rejection when its
+/// check fails.
 async fn take_turn<T>(
     agent: &AgentHandle,
     role: &str,

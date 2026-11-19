@@ -46,7 +46,7 @@ impl ReplayProvider {
     }
 }
 
-/// The replies of a record written before the event log existed: one per turn file, which holds
+/// The replies of a record that has no event log: one per turn file, which holds
 /// only a reply that passed its checks.
 fn calls_from_turns(dir: &Path) -> anyhow::Result<Vec<CallEvent>> {
     let turns = dir.join("turns");

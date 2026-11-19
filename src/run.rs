@@ -1,4 +1,5 @@
-//! `cross_examine`: one run from proposal to report, shared by both front ends.
+//! `cross_examine`, one run from proposal to report, which every front end and the evaluation
+//! share, and the replay of a recorded run.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
