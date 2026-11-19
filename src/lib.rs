@@ -3,6 +3,7 @@ pub mod agents;
 pub mod check;
 pub mod config;
 pub mod debate;
+pub mod eval;
 pub mod event;
 pub mod mcp;
 pub mod model;

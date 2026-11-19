@@ -31,7 +31,8 @@
   - the quote check, word for word with whitespace normalised;
   - the completeness checks: every critique answered once, every discussed critique responded to once, no critique id reused, and a satisfied turn that presses or raises nothing;
   - the ending of the debate: the early stop at the first satisfied adversary turn and the split into accepted, dropped and open critiques;
-  - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
+  - the key handling: owner-only storage, the refusal of a key file others can read, and redaction;
+  - the scoring of an evaluation: which critiques land on a planted defect, and the outcome that stands for it.
 - Put each area's tests in one file under `tests/`. A test that needs a model drives it with `ScriptedProvider`, never the network or a real key.
 - Run `cargo test` before committing a change that touches a tested area.
 - Check behaviour against a live model with `sedcontra run` on a proposal kept under `eval/`, not with a test.

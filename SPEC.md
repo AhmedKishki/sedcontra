@@ -165,7 +165,8 @@ The agents are independent of the provider: a prompt names no provider and no mo
   - the quote check, word for word with whitespace normalised;
   - the completeness checks: every critique answered once, every discussed critique responded to once, no critique id reused, and a satisfied turn that presses or raises nothing;
   - the ending of the debate: the early stop at the first satisfied adversary turn and the split into accepted, dropped and open critiques;
-  - the key handling: owner-only storage, the refusal of a key file others can read, and redaction.
+  - the key handling: owner-only storage, the refusal of a key file others can read, and redaction;
+  - the scoring of an evaluation: which critiques land on a planted defect, and the outcome that stands for it.
 
 ## Non-goals
 
