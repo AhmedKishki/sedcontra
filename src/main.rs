@@ -46,6 +46,14 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Run a recorded run again without a model and compare the outcome with the recorded one.
+    Replay {
+        /// The run folder to replay.
+        record: PathBuf,
+        /// The folder for the new run record; defaults to sedcontra-replays in the temporary directory.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Manage provider API keys.
     Key {
         #[command(subcommand)]
@@ -90,7 +98,26 @@ async fn main() -> ExitCode {
             let prompts = (adversary.as_deref(), advocate.as_deref());
             run(cli.config.as_deref(), &proposal, context.as_deref(), rounds, prompts, format, out.as_deref()).await
         }
+        Cmd::Replay { record, out } => replay(&record, out).await,
         Cmd::Key { action: KeyAction::Set { provider } } => set_key(cli.config.as_deref(), &provider),
+    }
+}
+
+async fn replay(record: &Path, out: Option<PathBuf>) -> ExitCode {
+    let out = out.unwrap_or_else(|| std::env::temp_dir().join("sedcontra-replays"));
+    match sedcontra::run::replay(record, &out).await {
+        Ok(differing) if differing.is_empty() => {
+            println!("identical");
+            ExitCode::SUCCESS
+        }
+        Ok(differing) => {
+            println!("different: {}", differing.join(", "));
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("sedcontra: {e:#}");
+            ExitCode::from(2)
+        }
     }
 }
 

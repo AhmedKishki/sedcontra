@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow, bail};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -13,7 +13,7 @@ use crate::agents::{AgentDef, load_agent};
 use crate::config::Config;
 use crate::debate::{ADVERSARY_SHAPE, ADVOCATE_SHAPE, DebateInput, run_debate};
 use crate::event::RunEvent;
-use crate::provider::{ModelProvider, OpenAiCompatible};
+use crate::provider::{ModelProvider, OpenAiCompatible, ReplayProvider};
 use crate::record::RunRecord;
 use crate::report::{Report, build_report, render_markdown, render_transcript};
 
@@ -152,4 +152,82 @@ pub async fn cross_examine(
             })
         }
     }
+}
+
+/// The parts of two run records that differ, empty when the runs ended alike.
+pub fn compare_records(recorded: &Path, replayed: &Path) -> anyhow::Result<Vec<String>> {
+    let mut differing = Vec::new();
+    if read_status(recorded)? != read_status(replayed)? {
+        differing.push("status".to_string());
+    }
+    match (read_report(recorded)?, read_report(replayed)?) {
+        (None, None) => {}
+        (Some(a), Some(b)) => {
+            // `run_id` and `record_dir` are left out because they differ between any two runs.
+            for part in ["ending", "rounds_run", "round_limit", "threads", "transcript"] {
+                if a.get(part) != b.get(part) {
+                    differing.push(part.to_string());
+                }
+            }
+        }
+        _ => differing.push("report".to_string()),
+    }
+    Ok(differing)
+}
+
+fn read_status(dir: &Path) -> anyhow::Result<String> {
+    let path = dir.join("status");
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(text.trim().to_string())
+}
+
+fn read_report(dir: &Path) -> anyhow::Result<Option<serde_json::Value>> {
+    let path = dir.join("report.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let report = serde_json::from_str(&text).with_context(|| format!("{} does not parse", path.display()))?;
+    Ok(Some(report))
+}
+
+/// Runs the debate again on the model replies of the record in `record_dir`, writes the new run
+/// record under `runs_dir` and returns the parts in which it differs from the recorded one.
+pub async fn replay(record_dir: &Path, runs_dir: &Path) -> anyhow::Result<Vec<String>> {
+    let proposal_path = record_dir.join("proposal.md");
+    let proposal = std::fs::read_to_string(&proposal_path).with_context(|| format!("reading {}", proposal_path.display()))?;
+    let context_path = record_dir.join("context.md");
+    let context = if context_path.exists() {
+        Some(std::fs::read_to_string(&context_path).with_context(|| format!("reading {}", context_path.display()))?)
+    } else {
+        None
+    };
+
+    let mut config = Config::load(Some(&record_dir.join("config.toml")))?;
+    config.runs_dir = Some(runs_dir.to_path_buf());
+    let advocate = load_agent("advocate", &config, None, ADVOCATE_SHAPE)?;
+    let adversary = load_agent("adversary", &config, None, ADVERSARY_SHAPE)?;
+
+    let replies = Arc::new(ReplayProvider::from_record(record_dir)?);
+    let mut providers: BTreeMap<String, Arc<dyn ModelProvider>> = BTreeMap::new();
+    for def in [&advocate, &adversary] {
+        providers.insert(def.model.provider.clone(), replies.clone());
+    }
+    let env = Environment { config, advocate, adversary, providers };
+
+    let replayed = match cross_examine(&env, proposal, context, None, CancellationToken::new()).await {
+        Ok(output) => output.report.record_dir,
+        Err(RunFailure::Failed { record_dir: Some(dir), .. }) => dir,
+        Err(RunFailure::Failed { reason, record_dir: None, .. }) => {
+            bail!("the replay created no run record: {reason}")
+        }
+        Err(RunFailure::Cancelled { .. }) => bail!("the replay was cancelled"),
+    };
+
+    let mut differing = compare_records(record_dir, &replayed)?;
+    let unused = replies.remaining();
+    if unused > 0 {
+        differing.push(format!("{unused} recorded replies were not used"));
+    }
+    Ok(differing)
 }

@@ -1,11 +1,13 @@
 //! How the advocate and the adversary reach a model.
 
 mod openai;
+mod replay;
 mod scripted;
 
 use serde::{Deserialize, Serialize};
 
 pub use openai::OpenAiCompatible;
+pub use replay::ReplayProvider;
 pub use scripted::ScriptedProvider;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -22,6 +24,8 @@ impl ChatMessage {
 
 #[derive(Clone, Debug)]
 pub struct ChatRequest {
+    /// The agent that asks. A provider that replays a record matches each reply to it.
+    pub agent: String,
     pub model: String,
     pub messages: Vec<ChatMessage>,
     pub max_tokens: u32,

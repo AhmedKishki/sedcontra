@@ -106,6 +106,7 @@ async fn ask(
     let mut attempts = 0;
     loop {
         let request = ChatRequest {
+            agent: def.name.clone(),
             model: def.model.model.clone(),
             messages: history.clone(),
             max_tokens: def.model.max_tokens,

@@ -116,6 +116,7 @@ Both front ends are thin layers over the same core and write the same run record
 - It prints the report to stdout, or writes it to `--out`, and always writes both renderings into the run record.
 - It exits with 0 whenever a report was produced, whatever the ending, and with a non-zero code on failure, printing the reason to stderr.
 - This is the background form: the caller's harness starts the process in the background and reads the report when it exits. Harnesses such as Claude Code notify the agent when a background process exits.
+- `replay <run folder> [--out <folder>]` runs the debate loop again on the model replies a run record holds, without a model and without a key, and compares the outcome with the recorded one. It prints `identical` and exits with 0, or prints the parts that differ, among the status, the ending, the rounds, the threads and the transcript, and exits with 1. A change to the checks or the report is tested against recorded runs this way. A record written before the event log existed replays from its turn files, which hold only the replies that passed, so a failed run from then replays to a different failure.
 
 ### Run record
 
