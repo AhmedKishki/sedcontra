@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::actor::AgentHandle;
 use crate::check::{QuoteIndex, check_adversary_turn, check_advocate_turn};
+use crate::event::{LogLine, Rejection, RunEvent, TurnEvent};
 use crate::model::{
     AdversaryTurn, AdvocateTurn, AnswerKind, CritiqueId, CritiqueStatus, DebateOutcome, Ending, Reply, ResponseAction,
     Thread, Turn,
@@ -40,11 +41,18 @@ pub struct DebateInput {
     pub round_limit: u32,
 }
 
-pub struct TurnEvent {
-    pub index: u32,
-    pub max: u32,
-    pub turn: Turn,
-    pub raw: String,
+/// The cancellation token and the events sender, which stay the same for every turn of a debate.
+struct DebateChannels<'a> {
+    cancel: &'a CancellationToken,
+    events: Option<&'a mpsc::UnboundedSender<RunEvent>>,
+}
+
+impl DebateChannels<'_> {
+    fn log(&self, line: LogLine) {
+        if let Some(tx) = self.events {
+            let _ = tx.send(RunEvent::Log(line));
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -58,10 +66,11 @@ pub async fn run_debate(
     input: &DebateInput,
     advocate: &AgentHandle,
     adversary: &AgentHandle,
-    events: Option<&mpsc::UnboundedSender<TurnEvent>>,
+    events: Option<&mpsc::UnboundedSender<RunEvent>>,
     cancel: &CancellationToken,
 ) -> Result<DebateOutcome, DebateError> {
     let index = QuoteIndex::new(&input.proposal);
+    let channels = DebateChannels { cancel, events };
     let max = 2 * input.round_limit;
     let mut turns: Vec<Turn> = Vec::new();
     let mut used_ids: BTreeSet<CritiqueId> = BTreeSet::new();
@@ -72,7 +81,7 @@ pub async fn run_debate(
     let record = |turn: Turn, raw: String, turns: &mut Vec<Turn>| {
         turns.push(turn.clone());
         if let Some(tx) = events {
-            let _ = tx.send(TurnEvent { index: turns.len() as u32, max, turn, raw });
+            let _ = tx.send(RunEvent::Turn(TurnEvent { index: turns.len() as u32, max, turn, raw }));
         }
     };
 
@@ -100,7 +109,7 @@ pub async fn run_debate(
                 )
             }
         };
-        let (adversary_turn, raw) = take_turn(adversary, "adversary", message, cancel, &turns, |value| {
+        let (adversary_turn, raw) = take_turn(adversary, "adversary", round, message, &channels, &turns, |value| {
             let turn: AdversaryTurn = shaped(value)?;
             check_adversary_turn(&index, &turn, &discussed, &used_ids)?;
             Ok(turn)
@@ -127,7 +136,7 @@ pub async fn run_debate(
             break;
         }
 
-        let (advocate_turn, raw) = take_turn(advocate, "advocate", message, cancel, &turns, |value| {
+        let (advocate_turn, raw) = take_turn(advocate, "advocate", round, message, &channels, &turns, |value| {
             let turn: AdvocateTurn = shaped(value)?;
             check_advocate_turn(&index, &turn, &expected)?;
             Ok(turn)
@@ -168,12 +177,14 @@ fn shaped<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, Vec<String>
     serde_json::from_value(value).map_err(|e| vec![format!("the reply does not have the required JSON shape: {e}")])
 }
 
-/// One turn with one retry: a reply that fails its checks is sent back with the failures.
+/// One turn with one retry: a reply that fails its checks is sent back with the failures. Every
+/// model reply and every rejection goes to the events sender as it happens.
 async fn take_turn<T>(
     agent: &AgentHandle,
     role: &str,
+    round: u32,
     message: String,
-    cancel: &CancellationToken,
+    channels: &DebateChannels<'_>,
     turns: &[Turn],
     check: impl Fn(Value) -> Result<T, Vec<String>>,
 ) -> Result<(T, String), DebateError> {
@@ -181,20 +192,28 @@ async fn take_turn<T>(
     let mut text = message;
     for attempt in 0..2 {
         // The cancel branch is polled first, so no turn starts once the run is cancelled.
-        let reply = tokio::select! {
+        let outcome = tokio::select! {
             biased;
-            _ = cancel.cancelled() => return Err(fail("cancelled".into(), true)),
-            reply = agent.turn(text) => reply.map_err(|e| fail(e.to_string(), false))?,
+            _ = channels.cancel.cancelled() => return Err(fail("cancelled".into(), true)),
+            outcome = agent.turn(text) => outcome,
         };
+        // The calls are sent before the result is read, so the replies of a turn that ends in an
+        // agent error stay in the log.
+        for call in outcome.calls {
+            channels.log(LogLine::Call(call));
+        }
+        let reply = outcome.result.map_err(|e| fail(e.to_string(), false))?;
         match check(reply.value) {
             Ok(value) => return Ok((value, reply.raw)),
             Err(errors) if attempt == 0 => {
+                channels.log(LogLine::Rejected(Rejection { agent: role.to_string(), round, failures: errors.clone() }));
                 text = format!(
                     "Your reply failed these checks:\n{}\n\nReply again with the whole corrected JSON object.",
                     errors.iter().map(|e| format!("- {e}")).collect::<Vec<_>>().join("\n")
                 );
             }
             Err(errors) => {
+                channels.log(LogLine::Rejected(Rejection { agent: role.to_string(), round, failures: errors.clone() }));
                 return Err(fail(format!("the {role}'s turn failed the checks twice: {}", errors.join("; ")), false));
             }
         }

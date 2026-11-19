@@ -29,10 +29,14 @@ pub struct ChatRequest {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+/// The usage object a provider reports for one call, kept as reported, so the core names no provider's fields.
+pub type Usage = serde_json::Map<String, serde_json::Value>;
+
 #[derive(Clone, Debug)]
 pub struct Completion {
     pub content: String,
     pub finish_reason: Option<String>,
+    pub usage: Option<Usage>,
 }
 
 #[derive(thiserror::Error, Debug)]

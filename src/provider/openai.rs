@@ -83,6 +83,7 @@ impl ModelProvider for OpenAiCompatible {
         Ok(Completion {
             content: choice["message"]["content"].as_str().unwrap_or_default().to_string(),
             finish_reason: choice["finish_reason"].as_str().map(str::to_string),
+            usage: value["usage"].as_object().cloned(),
         })
     }
 }

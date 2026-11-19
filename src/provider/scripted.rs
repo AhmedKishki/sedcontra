@@ -31,7 +31,7 @@ impl ModelProvider for ScriptedProvider {
         self.calls.lock().unwrap().push(req.model.clone());
         let reply = self.scripts.lock().unwrap().get_mut(&req.model).and_then(VecDeque::pop_front);
         match reply {
-            Some(content) => Ok(Completion { content, finish_reason: Some("stop".into()) }),
+            Some(content) => Ok(Completion { content, finish_reason: Some("stop".into()), usage: None }),
             None => Err(ProviderError::Other(format!("script exhausted for model {}", req.model))),
         }
     }

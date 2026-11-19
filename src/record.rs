@@ -1,13 +1,16 @@
-//! One folder per run: inputs, resolved settings, every turn, the status and the report.
+//! One folder per run: inputs, resolved settings, every turn, the event log, the status and the report.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
 use crate::agents::AgentDef;
 use crate::config::Config;
-use crate::debate::TurnEvent;
+use crate::event::{LogLine, TurnEvent};
+
+const EVENT_LOG: &str = "events.jsonl";
 
 #[derive(Clone, Debug)]
 pub struct RunRecord {
@@ -57,6 +60,33 @@ impl RunRecord {
         fs::write(turns.join(format!("{stem}.json")), &ev.raw)?;
         fs::write(turns.join(format!("{stem}.parsed.json")), serde_json::to_string_pretty(&ev.turn)?)?;
         Ok(())
+    }
+
+    pub fn append_log(&self, line: &LogLine) -> anyhow::Result<()> {
+        let path = self.dir.join(EVENT_LOG);
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .with_context(|| format!("opening {}", path.display()))?;
+        let text = format!("{}\n", serde_json::to_string(line)?);
+        file.write_all(text.as_bytes()).with_context(|| format!("writing {}", path.display()))?;
+        Ok(())
+    }
+
+    pub fn read_log(dir: &Path) -> anyhow::Result<Vec<LogLine>> {
+        let path = dir.join(EVENT_LOG);
+        let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let mut log = Vec::new();
+        for (i, line) in text.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let parsed = serde_json::from_str(line)
+                .with_context(|| format!("{} line {} does not parse", path.display(), i + 1))?;
+            log.push(parsed);
+        }
+        Ok(log)
     }
 
     pub fn set_status(&self, status: &str) -> anyhow::Result<()> {

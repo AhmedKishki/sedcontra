@@ -119,7 +119,7 @@ Both front ends are thin layers over the same core and write the same run record
 
 ### Run record
 
-Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), the status (running, done, failed or cancelled) and the report in both renderings. Because every turn is written when it completes, a later checkpoint-and-resume feature can restart a run from its last turn.
+Each run gets one folder under a configured runs directory. It holds the proposal and context, a snapshot of the resolved configuration and agent definitions, every turn as it completes (the raw model output and the parsed data), an event log, the status (running, done, failed or cancelled) and the report in both renderings. The event log, `events.jsonl`, takes one line for every model reply as it arrives, with the agent, whether the reply parsed, was cut off or was not JSON, the finish reason, the usage the provider reported and the content, and one line for every reply that failed its checks, with the failures. The usage is kept as the provider reports it, so the core names no provider's fields. Because every turn is written when it completes, a later checkpoint-and-resume feature can restart a run from its last turn.
 
 ### The core and the swappable parts
 
