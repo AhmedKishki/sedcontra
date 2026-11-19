@@ -12,6 +12,9 @@ use crate::event::{LogLine, TurnEvent};
 
 const EVENT_LOG: &str = "events.jsonl";
 
+/// The commit checked out when the binary was built, or "unknown" outside a git checkout.
+pub const COMMIT: &str = env!("SEDCONTRA_COMMIT");
+
 #[derive(Clone, Debug)]
 pub struct RunRecord {
     pub id: String,
@@ -37,6 +40,7 @@ impl RunRecord {
             fs::write(dir.join("context.md"), context)?;
         }
         fs::write(dir.join("config.toml"), toml::to_string(config)?)?;
+        fs::write(dir.join("version"), format!("sedcontra {} commit {COMMIT}\n", env!("CARGO_PKG_VERSION")))?;
         for agent in agents {
             let header = format!(
                 "source: {}\nprovider: {}\nmodel: {}\nmax_tokens: {}\nrequest: {}\n\n",

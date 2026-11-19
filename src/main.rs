@@ -11,7 +11,7 @@ use sedcontra::secret;
 
 /// Adversarial cross-examination of a proposal: an adversary critiques its argument, an advocate answers from the proposal's own words.
 #[derive(Parser)]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SEDCONTRA_COMMIT"), ")"))]
 struct Cli {
     /// Configuration file; defaults to ./sedcontra.toml, then the user config directory.
     #[arg(long, global = true)]
